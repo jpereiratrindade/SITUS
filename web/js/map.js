@@ -8,11 +8,14 @@ window.SitusMap = (() => {
     let highlightGeom = null;
     let showSectors = true;
     let showHydro = true;
+    let showLabels = false;
+    let selectedFeature = null;
     let bbox = { minLon: -57.65, minLat: -33.75, maxLon: -49.69, maxLat: -27.08 }; // RS aproximado
     let drawMode = false;
     let dragStart = null;
     let panStart = null;
     let onPolygonSelected = null;
+    let onFeatureClicked = null;
 
     const SITUATION_COLORS = {
         '1': '#1a7dc4',
@@ -136,26 +139,62 @@ window.SitusMap = (() => {
         }
 
         if (showSectors) {
-            for (const f of features) {
+            features.forEach((f, idx) => {
                 const p = f.properties || {};
                 const d = geomToPath(f.geometry, w, h);
                 const fill = colorFor(p.situation_code);
-                html += `<path d="${d}" fill="${fill}" fill-opacity="0.35" stroke="#0c2844" stroke-width="0.8"><title>Setor ${p.unit_code || ''} · ${p.situation_label || ''}</title></path>`;
-            }
+                const isSel = selectedFeature && selectedFeature.kind === 'sector' && selectedFeature.idx === idx;
+                html += `<path data-kind="sector" data-idx="${idx}" d="${d}" fill="${fill}" fill-opacity="${isSel ? '0.62' : '0.35'}" stroke="${isSel ? '#e2ad4a' : '#0c2844'}" stroke-width="${isSel ? '2.4' : '0.8'}"><title>Setor ${p.unit_code || ''} · ${p.situation_label || ''}</title></path>`;
+            });
         }
 
         if (showHydro) {
-            for (const hf of hydroFeatures) {
+            hydroFeatures.forEach((hf, idx) => {
                 const hp = hf.properties || {};
                 const hd = geomToPath(hf.geometry, w, h);
-                if (!hd) continue;
+                if (!hd) return;
                 const isBody = hp.feature_kind === 'WATER_BODY';
+                const isSel = selectedFeature && selectedFeature.kind === 'hydro' && selectedFeature.idx === idx;
                 if (isBody) {
-                    html += `<path d="${hd}" fill="#2ea8e8" fill-opacity="0.55" stroke="#0a5b8a" stroke-width="1"><title>${hp.feature_name || 'Massa d\'água'}</title></path>`;
+                    html += `<path data-kind="hydro" data-idx="${idx}" d="${hd}" fill="#2ea8e8" fill-opacity="0.55" stroke="${isSel ? '#e2ad4a' : '#0a5b8a'}" stroke-width="${isSel ? '2.4' : '1'}"><title>${hp.feature_name || 'Massa d\'água'}</title></path>`;
                 } else {
-                    html += `<path d="${hd}" fill="none" stroke="#1a7dc4" stroke-width="1.3" stroke-opacity="0.85"><title>${hp.feature_name || 'Curso d\'água'}</title></path>`;
+                    html += `<path data-kind="hydro" data-idx="${idx}" d="${hd}" fill="none" stroke="${isSel ? '#e2ad4a' : '#1a7dc4'}" stroke-width="${isSel ? '2.6' : '1.3'}" stroke-opacity="0.88"><title>${hp.feature_name || 'Curso d\'água'}</title></path>`;
+                }
+            });
+        }
+
+        if (showLabels) {
+            const labels = [];
+            if (showSectors) {
+                const sorted = [...features]
+                    .map((f, idx) => ({ f, idx, area: (f.properties && f.properties.area_m2) || 0 }))
+                    .sort((a, b) => b.area - a.area)
+                    .slice(0, 28);
+                for (const item of sorted) {
+                    const c = geomCentroid(item.f.geometry);
+                    if (!c) continue;
+                    const [lx, ly] = project(c[0], c[1], w, h);
+                    if (lx < 10 || lx > w - 10 || ly < 12 || ly > h - 10) continue;
+                    const code = (item.f.properties && item.f.properties.unit_code) || '';
+                    const shortCode = code.length > 6 ? '…' + code.slice(-6) : code;
+                    labels.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#071e38" stroke="#ffffff" stroke-width="2.5" paint-order="stroke" pointer-events="none">${shortCode}</text>`);
                 }
             }
+            if (showHydro) {
+                const seenNames = new Set();
+                for (const hf of hydroFeatures) {
+                    const nm = hf.properties && hf.properties.feature_name;
+                    if (!nm || seenNames.has(nm)) continue;
+                    const c = geomCentroid(hf.geometry);
+                    if (!c) continue;
+                    const [lx, ly] = project(c[0], c[1], w, h);
+                    if (lx < 10 || lx > w - 10 || ly < 12 || ly > h - 10) continue;
+                    seenNames.add(nm);
+                    labels.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="10" font-style="italic" fill="#0a4d78" stroke="#ffffff" stroke-width="2.5" paint-order="stroke" pointer-events="none">${nm}</text>`);
+                    if (seenNames.size >= 15) break;
+                }
+            }
+            html += labels.join('');
         }
 
         if (highlightGeom) {
@@ -173,8 +212,21 @@ window.SitusMap = (() => {
         updateScaleBar(w);
     }
 
-    function init(polygonCallback) {
+    function geomCentroid(geom) {
+        if (!geom || !geom.coordinates) return null;
+        let sx = 0, sy = 0, cnt = 0;
+        const visit = (c) => {
+            if (!Array.isArray(c)) return;
+            if (typeof c[0] === 'number') { sx += c[0]; sy += c[1]; cnt++; }
+            else { for (const x of c) visit(x); }
+        };
+        visit(geom.coordinates);
+        return cnt > 0 ? [sx / cnt, sy / cnt] : null;
+    }
+
+    function init(polygonCallback, featureClickCallback) {
         onPolygonSelected = polygonCallback;
+        onFeatureClicked = featureClickCallback || null;
         const el = svg();
         if (!el) return;
 
@@ -185,7 +237,13 @@ window.SitusMap = (() => {
             if (drawMode) {
                 dragStart = { px, py };
             } else {
-                panStart = { px, py, bbox: { ...bbox } };
+                const targetPath = ev.target && ev.target.closest ? ev.target.closest('path[data-kind]') : null;
+                panStart = {
+                    px, py,
+                    bbox: { ...bbox },
+                    hitKind: targetPath ? targetPath.dataset.kind : null,
+                    hitIdx: targetPath ? Number(targetPath.dataset.idx) : null
+                };
             }
         });
 
@@ -220,6 +278,19 @@ window.SitusMap = (() => {
                     if (onPolygonSelected) onPolygonSelected(poly);
                 }
                 dragStart = null;
+            } else if (!drawMode && panStart && panStart.hitKind != null) {
+                const dx = Math.abs((ev.clientX - rect.left) - panStart.px);
+                const dy = Math.abs((ev.clientY - rect.top) - panStart.py);
+                if (dx < 5 && dy < 5) {
+                    selectedFeature = { kind: panStart.hitKind, idx: panStart.hitIdx };
+                    render();
+                    if (onFeatureClicked) {
+                        const feat = panStart.hitKind === 'sector'
+                            ? features[panStart.hitIdx]
+                            : hydroFeatures[panStart.hitIdx];
+                        onFeatureClicked(panStart.hitKind, feat);
+                    }
+                }
             }
             panStart = null;
         });
@@ -263,6 +334,10 @@ window.SitusMap = (() => {
             showHydro = ev.target.checked;
             render();
         });
+        document.getElementById('layer-labels')?.addEventListener('change', (ev) => {
+            showLabels = ev.target.checked;
+            render();
+        });
         window.addEventListener('resize', render);
         render();
     }
@@ -280,9 +355,15 @@ window.SitusMap = (() => {
         features = (featureCollection && featureCollection.features) || [];
         hydroFeatures = (featureCollection && featureCollection.hydro_features) || [];
         highlightGeom = refGeom || null;
+        selectedFeature = null;
         updateBboxFromFeatures();
         render();
     }
 
-    return { init, setData, render };
+    function clearSelection() {
+        selectedFeature = null;
+        render();
+    }
+
+    return { init, setData, render, clearSelection };
 })();

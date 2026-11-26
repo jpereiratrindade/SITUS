@@ -497,10 +497,62 @@
         });
     }
 
+    function showSelectedFeatureMetadata(kind, feat) {
+        if (!feat) return;
+        const p = feat.properties || {};
+        const boxId = 'selected-feature-card';
+        let box = document.getElementById(boxId);
+        const inspector = document.getElementById('inspector-content');
+        if (!box && inspector) {
+            box = document.createElement('div');
+            box.id = boxId;
+            box.className = 'obs-card';
+            inspector.prepend(box);
+        }
+        if (!box) return;
+
+        if (kind === 'sector') {
+            box.innerHTML = `
+                <div class="section-heading" style="margin-bottom:4px;">
+                    <strong>Setor selecionado: ${escapeHtml(p.unit_code)}</strong>
+                    <button type="button" class="button outline" id="clear-feat-sel" style="min-height:28px;padding:4px 9px;">✕</button>
+                </div>
+                <p class="muted" style="margin:0 0 8px;">Município: ${escapeHtml(p.municipality_name)} (${escapeHtml(p.municipality_code)}) · Situação: ${escapeHtml(p.situation_label)} · Área: ${fmtAreaHa(p.area_m2)}</p>
+                <button type="button" class="button primary" id="investigate-selected-sector" style="min-height:32px;padding:6px 12px;">Investigar este setor (30 m)</button>
+            `;
+            document.getElementById('clear-feat-sel')?.addEventListener('click', () => {
+                box.remove();
+                window.SitusMap.clearSelection();
+            });
+            document.getElementById('investigate-selected-sector')?.addEventListener('click', () => {
+                if (feat.geometry) {
+                    runInvestigation({ kind: 'POLYGON', value: feat.geometry, crs: 'EPSG:4326' });
+                }
+            });
+        } else {
+            box.innerHTML = `
+                <div class="section-heading" style="margin-bottom:4px;">
+                    <strong>${p.feature_kind === 'WATER_BODY' ? 'Massa d\'água' : 'Curso d\'água'} (BC250)</strong>
+                    <button type="button" class="button outline" id="clear-feat-sel" style="min-height:28px;padding:4px 9px;">✕</button>
+                </div>
+                <p class="muted" style="margin:0;">Nome: ${escapeHtml(p.feature_name || 'Sem nome cadastrado no BC250')}</p>
+            `;
+            document.getElementById('clear-feat-sel')?.addEventListener('click', () => {
+                box.remove();
+                window.SitusMap.clearSelection();
+            });
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
-        window.SitusMap.init((poly) => {
-            runInvestigation({ kind: 'POLYGON', value: poly, crs: 'EPSG:4326' });
-        });
+        window.SitusMap.init(
+            (poly) => {
+                runInvestigation({ kind: 'POLYGON', value: poly, crs: 'EPSG:4326' });
+            },
+            (kind, feat) => {
+                showSelectedFeatureMetadata(kind, feat);
+            }
+        );
 
         document.getElementById('ref-kind')?.addEventListener('change', (ev) => {
             const k = ev.target.value;

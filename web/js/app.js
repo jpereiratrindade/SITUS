@@ -4,6 +4,12 @@
 (() => {
     let activeAbort = null;
     let lastReference = null;
+    const historyStack = []; // Apenas em memória da sessão (zero persistência)
+
+    function updateBackButton() {
+        const btn = document.getElementById('map-back-btn');
+        if (btn) btn.hidden = historyStack.length === 0;
+    }
 
     function fmtAreaHa(m2) {
         if (typeof m2 !== 'number' || !Number.isFinite(m2)) return '—';
@@ -135,11 +141,15 @@
         throw new Error('Selecione uma referência ou desenhe uma área no mapa.');
     }
 
-    async function runInvestigation(reference) {
+    async function runInvestigation(reference, { pushHistory = true } = {}) {
         if (activeAbort) activeAbort.abort();
         activeAbort = new AbortController();
         const signal = activeAbort.signal;
+        if (pushHistory && lastReference && JSON.stringify(lastReference) !== JSON.stringify(reference)) {
+            historyStack.push(lastReference);
+        }
         lastReference = reference;
+        updateBackButton();
 
         const notice = document.getElementById('explore-notice');
         const cancelBtn = document.getElementById('cancel-query-btn');
@@ -539,6 +549,13 @@
 
         document.getElementById('cancel-query-btn')?.addEventListener('click', () => {
             if (activeAbort) activeAbort.abort();
+        });
+
+        document.getElementById('map-back-btn')?.addEventListener('click', () => {
+            if (historyStack.length === 0) return;
+            const prev = historyStack.pop();
+            updateBackButton();
+            runInvestigation(prev, { pushHistory: false });
         });
 
         initSettings();

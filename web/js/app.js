@@ -408,12 +408,19 @@
             `;
         }).join('');
 
+        const interUnits = inter.units || [];
+        const munNames = [...new Set(interUnits.map(u => u.municipality_name).filter(Boolean))];
+        const munCodes = [...new Set(interUnits.map(u => u.municipality_code).filter(Boolean))];
+        const titleText = munNames.length === 1
+            ? `${munNames[0]} (IBGE ${munCodes[0]})`
+            : (munNames.length > 1 ? `${munNames.join(', ')}` : 'Investigação territorial');
+
         el.innerHTML = `
             <div class="section-heading" style="margin-bottom:8px;">
                 <span class="badge">${escapeHtml(refData.status)}</span>
                 ${execBadgeHtml}
             </div>
-            <h3>Investigação territorial</h3>
+            <h3>${escapeHtml(titleText)}</h3>
             <dl>
                 <dt>Nível espacial</dt><dd>${escapeHtml(refData.spatial_level)}</dd>
                 <dt>Área de referência</dt><dd>${fmtAreaHa(inter.reference_area_m2)}</dd>

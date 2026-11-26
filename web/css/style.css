@@ -138,8 +138,15 @@ p { margin: 0 0 12px; }
 }
 .scale-bar { display: inline-flex; align-items: center; gap: 6px; }
 .scale-line { display: inline-block; width: 64px; height: 4px; border: 1.5px solid var(--navy); border-top: 0; }
-.map-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; }
-.legend-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: middle; margin-right: 4px; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; align-items: center; }
+.legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
+.swatch-urbana { background: rgba(26, 125, 196, 0.55); border: 1px solid #0c2844; }
+.swatch-aglomerado { background: rgba(8, 127, 140, 0.55); border: 1px solid #0c2844; }
+.swatch-rural { background: rgba(77, 158, 107, 0.55); border: 1px solid #0c2844; }
+.swatch-setor { background: transparent; border: 1.5px solid #0c2844; }
+.swatch-hydro { background: transparent; border-bottom: 2.5px solid #1a7dc4; border-radius: 0; height: 6px; }
+.swatch-water { background: rgba(46, 168, 232, 0.65); border: 1px solid #0a5b8a; }
+.swatch-area { background: transparent; border: 2px dashed #e2ad4a; }
 
 .inspector-box { border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; background: #fbfdff; }
 .inspector-box h3 { margin: 4px 0 10px; font-size: 17px; color: var(--navy); }

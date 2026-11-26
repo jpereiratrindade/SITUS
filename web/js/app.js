@@ -125,6 +125,18 @@
         if (kind === 'MUNICIPALITY') {
             return { kind: 'MUNICIPALITY', value: rawVal, crs: 'EPSG:4326' };
         }
+        if (kind === 'STREET') {
+            const commaIdx = rawVal.lastIndexOf(',');
+            if (commaIdx > 0) {
+                return {
+                    kind: 'STREET',
+                    value: rawVal.slice(0, commaIdx).trim(),
+                    municipality_code: rawVal.slice(commaIdx + 1).trim(),
+                    crs: 'EPSG:4326'
+                };
+            }
+            return { kind: 'STREET', value: rawVal, crs: 'EPSG:4326' };
+        }
         if (kind === 'CEP') {
             return { kind: 'CEP', value: rawVal, crs: 'EPSG:4326' };
         }
@@ -197,6 +209,78 @@
                     valEl.focus();
                 });
                 notice.textContent = 'Consulta concluída (sem cobertura ou fonte indisponível).';
+                return;
+            }
+
+            if (refData.status === 'AMBIGUOUS' && refData.kind === 'STREET') {
+                window.SitusMap.setData({ features: [] }, null);
+                const matchesHtml = (refData.matches || []).map(m => `
+                    <article class="obs-card nodata">
+                        <h4>${escapeHtml(m.reference_name)} · ${escapeHtml(m.municipality_name)} (${escapeHtml(m.municipality_code)})</h4>
+                        <p class="muted">${escapeHtml(String(m.face_count))} faces · Setores: ${escapeHtml(m.sectors || '—')} · Fonte: ${escapeHtml(m.source_id)}</p>
+                        <button type="button" class="button outline pick-street-btn" data-street="${escapeHtml(m.reference_name)}" data-mun="${escapeHtml(m.municipality_code)}">Selecionar logradouro</button>
+                    </article>
+                `).join('');
+                inspector.innerHTML = `
+                    <span class="badge warn">AMBIGUOUS</span>
+                    <h3>Logradouro com múltiplas correspondências</h3>
+                    <p>${(refData.reasons || []).map(escapeHtml).join(' ')}</p>
+                    ${matchesHtml}
+                `;
+                inspector.querySelectorAll('.pick-street-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        runInvestigation({ kind: 'STREET', value: btn.dataset.street, municipality_code: btn.dataset.mun, crs: 'EPSG:4326' });
+                    });
+                });
+                notice.textContent = 'Múltiplos logradouros encontrados; selecione o desejado.';
+                return;
+            }
+
+            if (refData.kind === 'STREET' && refData.status === 'RESOLVED' && !reference.investigate_surroundings) {
+                const munCode = refData.municipality_code;
+                const mapRes = await fetch('/api/v1/map/features', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kind: 'MUNICIPALITY', value: munCode, crs: 'EPSG:4326' }),
+                    signal
+                });
+                const mapData = await mapRes.json();
+                window.SitusMap.setData(mapData, refData.support_geometry || refData.analysis_geometry);
+                const m = (refData.matches && refData.matches[0]) || {};
+                inspector.innerHTML = `
+                    <span class="badge">R4 · RESOLVED</span>
+                    <h3>${escapeHtml(refData.reference_name || reference.value)} → ${escapeHtml(refData.municipality_name)}</h3>
+                    <p>${(refData.reasons || []).map(escapeHtml).join(' ')}</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0;padding:10px;background:#eef6fb;border-radius:8px;">
+                        <label style="font-size:12px;font-weight:700;">Entorno (m):
+                            <select id="street-radius-select" style="padding:5px 8px;border-radius:6px;border:1px solid #cbdce8;">
+                                <option value="250">250 m</option>
+                                <option value="500" selected>500 m</option>
+                                <option value="1000">1.000 m</option>
+                                <option value="2000">2.000 m</option>
+                            </select>
+                        </label>
+                        <button type="button" class="button primary" id="street-investigate-surroundings">Caracterizar entorno do logradouro</button>
+                    </div>
+                    <article class="obs-card">
+                        <h4>R4 · ${escapeHtml(m.reference_name || '')}</h4>
+                        <p class="muted">Faces IBGE: ${escapeHtml(String(m.face_count || '—'))} · Setores: ${escapeHtml(m.sectors || '—')}</p>
+                        <p class="muted">Fonte: ${escapeHtml(m.source_id || 'ibge_faces_rs_2022')} · Licença: ${escapeHtml(m.license || 'Dados Abertos IBGE')}</p>
+                        <p class="muted">${escapeHtml(m.limitations || '')}</p>
+                    </article>
+                `;
+                document.getElementById('street-investigate-surroundings')?.addEventListener('click', () => {
+                    const r = Number(document.getElementById('street-radius-select').value || 500);
+                    runInvestigation({
+                        kind: 'STREET',
+                        value: refData.reference_name || reference.value,
+                        municipality_code: munCode,
+                        radius_m: r,
+                        crs: 'EPSG:4326',
+                        investigate_surroundings: true
+                    });
+                });
+                notice.textContent = `Logradouro resolvido em R4 (${refData.municipality_name}).`;
                 return;
             }
 
@@ -565,6 +649,7 @@
             } else {
                 inp.removeAttribute('list');
                 if (k === 'POINT') inp.placeholder = 'longitude, latitude (ex: -51.23, -30.03)';
+                else if (k === 'STREET') inp.placeholder = 'Logradouro [, Município] (ex: Rua Rádio Cultura, Bagé)';
                 else if (k === 'CEP') inp.placeholder = 'CEP 8 dígitos (ex: 96540-000 Agudo, 90240-552 Porto Alegre)';
             }
         });

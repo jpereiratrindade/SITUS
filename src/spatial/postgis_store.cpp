@@ -234,6 +234,55 @@ std::expected<GeomQuery, std::string> build_reference_geom_query(
         };
     }
 
+    if (kind == "STREET") {
+        if (!req["value"].is_string()) {
+            return std::unexpected("value para STREET deve ser string");
+        }
+        const std::string street_raw = req["value"].get<std::string>();
+        if (street_raw.size() < 3) {
+            return std::unexpected("Informe pelo menos 3 caracteres para o logradouro");
+        }
+        const std::string mun_code = req.value("municipality_code", std::string{});
+        const double radius_m = req.value("radius_m", 500.0);
+        if (radius_m <= 0.0 || radius_m > limits.max_radius_m) {
+            return std::unexpected("radius_m para entorno de logradouro deve estar entre 1 e " + std::to_string(limits.max_radius_m) + " m");
+        }
+
+        auto chk = exec_params(
+            conn,
+            "WITH q AS ("
+            "  SELECT UPPER(translate(TRIM($1), 'ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇçÑñ', 'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNn')) AS norm"
+            ") "
+            "SELECT COUNT(DISTINCT sf.municipality_code), COUNT(*) "
+            "FROM street_face sf "
+            "JOIN dataset_version dv ON dv.version_id = sf.version_id "
+            "JOIN source s ON s.source_id = dv.source_id "
+            "CROSS JOIN q "
+            "WHERE dv.is_active = TRUE AND s.approval_status = 'APPROVED' "
+            "  AND ($2 = '' OR sf.municipality_code = $2) "
+            "  AND (sf.normalized_name = q.norm OR sf.normalized_name LIKE '%' || q.norm || '%')",
+            {street_raw, mun_code}
+        );
+        if (!chk || PQntuples(chk->get()) == 0 || std::atoi(PQgetvalue(chk->get(), 0, 1)) == 0) {
+            return std::unexpected("Logradouro nao encontrado na Base de Faces do IBGE 2022");
+        }
+        if (std::atoi(PQgetvalue(chk->get(), 0, 0)) > 1) {
+            return std::unexpected("Logradouro encontrado em multiplos municipios; especifique o municipio");
+        }
+        return GeomQuery{
+            "(SELECT ST_Buffer(ST_Union(sf.geom)::geography, $3::double precision)::geometry "
+            "FROM street_face sf "
+            "JOIN dataset_version dv ON dv.version_id = sf.version_id "
+            "JOIN source s ON s.source_id = dv.source_id "
+            "WHERE dv.is_active = TRUE AND s.approval_status = 'APPROVED' "
+            "  AND ($2 = '' OR sf.municipality_code = $2) "
+            "  AND (sf.normalized_name = UPPER(translate(TRIM($1), 'ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇçÑñ', 'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNn')) "
+            "       OR sf.normalized_name LIKE '%' || UPPER(translate(TRIM($1), 'ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇçÑñ', 'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNn')) || '%'))",
+            {street_raw, mun_code, std::to_string(radius_m)},
+            "Entorno geodesico de " + std::to_string(static_cast<int>(radius_m)) + " m ao redor do logradouro (IBGE Faces 2022)"
+        };
+    }
+
     return std::unexpected("kind nao suportado para operacao espacial: " + kind);
 }
 
@@ -464,6 +513,127 @@ PostgisStore::resolve_reference(const nlohmann::json& req, const domain::Securit
             {"analysis_geometry", analysis_geom},
             {"matches", matches},
             {"reasons", reasons}
+        };
+    }
+
+    if (kind == "STREET") {
+        if (!req.contains("value") || !req["value"].is_string()) {
+            return std::unexpected("value para STREET deve ser string");
+        }
+        const std::string street_raw = req["value"].get<std::string>();
+        if (street_raw.size() < 3) {
+            return std::unexpected("Informe pelo menos 3 caracteres para o logradouro");
+        }
+        const std::string mun_filter = req.value("municipality_code", std::string{});
+
+        auto conn = connect_pg(conninfo_);
+        if (!conn) return std::unexpected(conn.error());
+
+        auto res = exec_params(
+            conn->get(),
+            "WITH q AS ("
+            "  SELECT UPPER(translate(TRIM($1), 'ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇçÑñ', 'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNn')) AS norm, "
+            "         UPPER(translate(TRIM($2), 'ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇçÑñ', 'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNn')) AS mun_norm"
+            "), mun_names AS ("
+            "  SELECT DISTINCT tu.municipality_code, tu.municipality_name "
+            "  FROM territorial_unit tu JOIN dataset_version dv ON dv.version_id = tu.version_id "
+            "  WHERE dv.is_active = TRUE"
+            ") "
+            "SELECT sf.municipality_code, COALESCE(mn.municipality_name, sf.municipality_code), "
+            "       sf.full_name, COUNT(*)::int AS face_count, "
+            "       STRING_AGG(DISTINCT sf.sector_code, ', ' ORDER BY sf.sector_code) AS sectors, "
+            "       ST_AsGeoJSON(ST_Union(sf.geom)), dv.dataset_version, "
+            "       MAX(CASE WHEN sf.normalized_name = q.norm THEN 1 ELSE 0 END) AS is_exact "
+            "FROM street_face sf "
+            "JOIN dataset_version dv ON dv.version_id = sf.version_id "
+            "JOIN source s ON s.source_id = dv.source_id "
+            "LEFT JOIN mun_names mn ON mn.municipality_code = sf.municipality_code "
+            "CROSS JOIN q "
+            "WHERE dv.is_active = TRUE AND s.approval_status = 'APPROVED' "
+            "  AND sf.full_name <> '' "
+            "  AND (q.mun_norm = '' OR sf.municipality_code = $2 OR UPPER(translate(COALESCE(mn.municipality_name, ''), 'ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇçÑñ', 'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNn')) = q.mun_norm) "
+            "  AND (sf.normalized_name = q.norm OR sf.normalized_name LIKE '%' || q.norm || '%') "
+            "GROUP BY sf.municipality_code, mn.municipality_name, sf.full_name, dv.dataset_version "
+            "ORDER BY is_exact DESC, COUNT(*) DESC, sf.full_name ASC "
+            "LIMIT 15",
+            {street_raw, mun_filter}
+        );
+        if (!res) return std::unexpected(res.error());
+
+        const int nrows = PQntuples(res->get());
+        if (nrows == 0) {
+            return nlohmann::json{
+                {"status", "UNAVAILABLE"},
+                {"kind", "STREET"},
+                {"resolution_level", "R0"},
+                {"spatial_level", "R0 (UNAVAILABLE)"},
+                {"method", "ibge_faces_logradouros_2022_lookup"},
+                {"support_geometry", nullptr},
+                {"analysis_geometry", nullptr},
+                {"provenance", {{"policy", "CATEGORY_A_ONLY"}}},
+                {"reasons", nlohmann::json::array({
+                    "Logradouro nao encontrado na Base de Faces de Logradouros (IBGE Censo 2022)."
+                })}
+            };
+        }
+
+        nlohmann::json matches = nlohmann::json::array();
+        for (int i = 0; i < nrows; ++i) {
+            matches.push_back({
+                {"resolution_level", "R4"},
+                {"reference_kind", "PUBLIC_WAY"},
+                {"municipality_code", PQgetvalue(res->get(), i, 0)},
+                {"municipality_name", PQgetvalue(res->get(), i, 1)},
+                {"reference_name", PQgetvalue(res->get(), i, 2)},
+                {"face_count", std::atoi(PQgetvalue(res->get(), i, 3))},
+                {"sectors", PQgetvalue(res->get(), i, 4)},
+                {"source_id", "ibge_faces_rs_2022"},
+                {"license", "Dados Abertos IBGE"},
+                {"dataset_version", PQgetvalue(res->get(), i, 6)},
+                {"limitations", "Faces publicas de logradouros (IBGE Censo 2022); sem numeracao predial ou CEP."},
+                {"support_geometry", nlohmann::json::parse(PQgetvalue(res->get(), i, 5))}
+            });
+        }
+
+        const bool is_ambiguous = nrows > 1;
+        const auto& top = matches[0];
+        const std::string top_mun = top["municipality_code"].get<std::string>();
+
+        nlohmann::json support_geom = is_ambiguous ? nlohmann::json(nullptr) : top["support_geometry"];
+        nlohmann::json analysis_geom = nullptr;
+        const double req_radius_m = req.value("radius_m", 0.0);
+        if (!is_ambiguous && req_radius_m > 0.0) {
+            auto bgeom = exec_params(
+                conn->get(),
+                "SELECT ST_AsGeoJSON(ST_Buffer(ST_GeomFromGeoJSON($1)::geography, $2::double precision)::geometry)",
+                {support_geom.dump(), std::to_string(req_radius_m)}
+            );
+            if (bgeom && PQntuples(bgeom->get()) > 0) {
+                const std::string bg = PQgetvalue(bgeom->get(), 0, 0);
+                if (!bg.empty() && bg != "null") {
+                    analysis_geom = nlohmann::json::parse(bg);
+                }
+            }
+        }
+
+        return nlohmann::json{
+            {"status", is_ambiguous ? "AMBIGUOUS" : "RESOLVED"},
+            {"kind", "STREET"},
+            {"street_query", street_raw},
+            {"resolution_level", is_ambiguous ? "AMBIGUOUS" : "R4"},
+            {"spatial_level", is_ambiguous ? "AMBIGUOUS" : "R4 (PUBLIC_WAY)"},
+            {"municipality_code", is_ambiguous ? nlohmann::json(nullptr) : nlohmann::json(top_mun)},
+            {"municipality_name", is_ambiguous ? nlohmann::json(nullptr) : top["municipality_name"]},
+            {"reference_name", is_ambiguous ? nlohmann::json(nullptr) : top["reference_name"]},
+            {"method", "ibge_faces_logradouros_2022_lookup"},
+            {"support_geometry", support_geom},
+            {"analysis_geometry", analysis_geom},
+            {"matches", matches},
+            {"reasons", nlohmann::json::array({
+                is_ambiguous
+                    ? "Multiplos logradouros ou municipios correspondentes encontrados; selecione o logradouro desejado."
+                    : "Logradouro localizado na Base de Faces de Logradouros do IBGE (Censo 2022, R4)."
+            })}
         };
     }
 

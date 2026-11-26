@@ -129,7 +129,10 @@
                     <button type="button" id="map-fit" class="button outline">Ajustar</button>
                     <button type="button" id="map-draw-btn" class="button outline">▢ Selecionar área</button>
                   </div>
-                  <span class="muted">Visualização local simplificada (WGS84)</span>
+                  <div style="display:flex;gap:10px;align-items:center;font-size:12px;">
+                    <label><input type="checkbox" id="layer-sectors" checked> Setores</label>
+                    <label><input type="checkbox" id="layer-hydro" checked> Hidrografia</label>
+                  </div>
                 </div>
                 <svg id="situs-map-svg" role="img" aria-label="Mapa vetorial local do SITUS"></svg>
                 <div class="map-footer">

@@ -625,9 +625,12 @@ PostgisStore::intersect_territories(const nlohmann::json& req, const domain::Sec
 
         const std::string sit_code_raw = PQgetvalue(res->get(), i, 3);
         const std::string sit_code = sit_code_raw.empty() ? "N/A" : sit_code_raw;
-        const std::string sit_lbl = sit_code_raw.empty()
+        const std::string sit_lbl_base = sit_code_raw.empty()
             ? "Sem classificacao de situacao (ex.: massa d'agua)"
             : situation_label_from_code(sit_code, PQgetvalue(res->get(), i, 4));
+        const std::string sit_lbl = sit_code_raw.empty()
+            ? sit_lbl_base
+            : (sit_lbl_base + " (sit. " + sit_code + ")");
 
         units.push_back({
             {"unit_code", PQgetvalue(res->get(), i, 0)},
@@ -927,9 +930,38 @@ PostgisStore::get_map_features(const nlohmann::json& req, const domain::Security
         });
     }
 
+    nlohmann::json hydro_features = nlohmann::json::array();
+    {
+        const std::string hsql =
+            "WITH ref AS (SELECT " + gq->geom_expr + " AS g) "
+            "SELECT h.feature_kind, COALESCE(h.feature_name, ''), "
+            "ST_AsGeoJSON(ST_SimplifyPreserveTopology(ST_Intersection(h.geom, ref.g), 0.0003)) "
+            "FROM ref "
+            "JOIN hydro_feature h ON ST_Intersects(h.geom, ref.g) "
+            "JOIN dataset_version dv ON dv.version_id = h.version_id "
+            "WHERE dv.is_active = TRUE AND ref.g IS NOT NULL "
+            "LIMIT 800";
+        auto hres = exec_params(conn->get(), hsql.c_str(), gq->params);
+        if (hres) {
+            for (int i = 0; i < PQntuples(hres->get()); ++i) {
+                const std::string gstr = PQgetvalue(hres->get(), i, 2);
+                if (gstr.empty() || gstr == "null") continue;
+                hydro_features.push_back({
+                    {"type", "Feature"},
+                    {"geometry", nlohmann::json::parse(gstr)},
+                    {"properties", {
+                        {"feature_kind", PQgetvalue(hres->get(), i, 0)},
+                        {"feature_name", PQgetvalue(hres->get(), i, 1)}
+                    }}
+                });
+            }
+        }
+    }
+
     return nlohmann::json{
         {"type", "FeatureCollection"},
         {"features", features},
+        {"hydro_features", hydro_features},
         {"truncated", static_cast<std::size_t>(n) >= limits.max_map_features}
     };
 }

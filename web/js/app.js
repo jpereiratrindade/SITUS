@@ -382,6 +382,8 @@
                         v.soils.slice(0, 5).map(s => `<tr><td>${escapeHtml(s.soil_symbol)} · ${escapeHtml(s.soil_class)}</td><td>${s.area_ha.toFixed(1)} ha</td><td>${(s.fraction * 100).toFixed(1)}%</td></tr>`).join('') +
                         `</tbody></table>`;
                 }
+            } else if (o.status === 'NOT_APPLICABLE') {
+                bodyHtml = `<p class="muted">${escapeHtml(o.limitations)}</p>`;
             }
             const labelMap = {
                 biome_composition: 'Bioma',

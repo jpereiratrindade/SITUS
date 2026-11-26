@@ -4,7 +4,10 @@
 window.SitusMap = (() => {
     const svg = () => document.getElementById('situs-map-svg');
     let features = [];
+    let hydroFeatures = [];
     let highlightGeom = null;
+    let showSectors = true;
+    let showHydro = true;
     let bbox = { minLon: -57.65, minLat: -33.75, maxLon: -49.69, maxLat: -27.08 }; // RS aproximado
     let drawMode = false;
     let dragStart = null;
@@ -132,11 +135,27 @@ window.SitusMap = (() => {
             return;
         }
 
-        for (const f of features) {
-            const p = f.properties || {};
-            const d = geomToPath(f.geometry, w, h);
-            const fill = colorFor(p.situation_code);
-            html += `<path d="${d}" fill="${fill}" fill-opacity="0.38" stroke="#0c2844" stroke-width="0.9"><title>Setor ${p.unit_code || ''} · ${p.situation_label || ''}</title></path>`;
+        if (showSectors) {
+            for (const f of features) {
+                const p = f.properties || {};
+                const d = geomToPath(f.geometry, w, h);
+                const fill = colorFor(p.situation_code);
+                html += `<path d="${d}" fill="${fill}" fill-opacity="0.35" stroke="#0c2844" stroke-width="0.8"><title>Setor ${p.unit_code || ''} · ${p.situation_label || ''}</title></path>`;
+            }
+        }
+
+        if (showHydro) {
+            for (const hf of hydroFeatures) {
+                const hp = hf.properties || {};
+                const hd = geomToPath(hf.geometry, w, h);
+                if (!hd) continue;
+                const isBody = hp.feature_kind === 'WATER_BODY';
+                if (isBody) {
+                    html += `<path d="${hd}" fill="#2ea8e8" fill-opacity="0.55" stroke="#0a5b8a" stroke-width="1"><title>${hp.feature_name || 'Massa d\'água'}</title></path>`;
+                } else {
+                    html += `<path d="${hd}" fill="none" stroke="#1a7dc4" stroke-width="1.3" stroke-opacity="0.85"><title>${hp.feature_name || 'Curso d\'água'}</title></path>`;
+                }
+            }
         }
 
         if (highlightGeom) {
@@ -236,6 +255,14 @@ window.SitusMap = (() => {
             el.classList.toggle('drawing', drawMode);
             ev.currentTarget.classList.toggle('active', drawMode);
         });
+        document.getElementById('layer-sectors')?.addEventListener('change', (ev) => {
+            showSectors = ev.target.checked;
+            render();
+        });
+        document.getElementById('layer-hydro')?.addEventListener('change', (ev) => {
+            showHydro = ev.target.checked;
+            render();
+        });
         window.addEventListener('resize', render);
         render();
     }
@@ -251,6 +278,7 @@ window.SitusMap = (() => {
 
     function setData(featureCollection, refGeom) {
         features = (featureCollection && featureCollection.features) || [];
+        hydroFeatures = (featureCollection && featureCollection.hydro_features) || [];
         highlightGeom = refGeom || null;
         updateBboxFromFeatures();
         render();

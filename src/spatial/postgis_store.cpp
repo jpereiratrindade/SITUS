@@ -1453,13 +1453,20 @@ PostgisStore::get_map_features(const nlohmann::json& req, const domain::Security
     nlohmann::json hydro_features = nlohmann::json::array();
     {
         const std::string hsql =
-            "WITH ref AS (SELECT " + gq->geom_expr + " AS g) "
+            "WITH ref AS (SELECT " + gq->geom_expr + " AS g), "
+            "vis_env AS ("
+            "  SELECT COALESCE(ST_Envelope(ST_Collect(tu.geom)), ST_Envelope(MAX(ref.g))) AS env "
+            "  FROM ref "
+            "  LEFT JOIN territorial_unit tu ON ST_Intersects(tu.geom, ref.g) "
+            "  LEFT JOIN dataset_version dv ON dv.version_id = tu.version_id AND dv.is_active = TRUE "
+            "  WHERE ref.g IS NOT NULL"
+            ") "
             "SELECT h.feature_kind, COALESCE(h.feature_name, ''), "
-            "ST_AsGeoJSON(ST_SimplifyPreserveTopology(ST_Intersection(h.geom, ref.g), 0.0003)) "
-            "FROM ref "
-            "JOIN hydro_feature h ON ST_Intersects(h.geom, ref.g) "
+            "ST_AsGeoJSON(ST_SimplifyPreserveTopology(h.geom, 0.0003)) "
+            "FROM vis_env "
+            "JOIN hydro_feature h ON ST_Intersects(h.geom, vis_env.env) "
             "JOIN dataset_version dv ON dv.version_id = h.version_id "
-            "WHERE dv.is_active = TRUE AND ref.g IS NOT NULL "
+            "WHERE dv.is_active = TRUE AND vis_env.env IS NOT NULL "
             "LIMIT 4000";
         auto hres = exec_params(conn->get(), hsql.c_str(), gq->params);
         if (hres) {

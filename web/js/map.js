@@ -176,7 +176,8 @@ window.SitusMap = (() => {
                     const [lx, ly] = project(c[0], c[1], w, h);
                     if (lx < 10 || lx > w - 10 || ly < 12 || ly > h - 10) continue;
                     const code = (item.f.properties && item.f.properties.unit_code) || '';
-                    const shortCode = code.length > 6 ? '…' + code.slice(-6) : code;
+                    // Formato IBGE 15 digitos: [0..6]=Mun, [7..8]=Distrito, [9..10]=Subdistrito, [11..14]=Setor
+                    const shortCode = code.length === 15 ? (code.slice(7, 9) + '-' + code.slice(11)) : code;
                     labels.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#071e38" stroke="#ffffff" stroke-width="2.5" paint-order="stroke" pointer-events="none">${shortCode}</text>`);
                 }
             }

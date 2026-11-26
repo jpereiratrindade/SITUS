@@ -604,6 +604,7 @@ PostgisStore::intersect_territories(const nlohmann::json& req, const domain::Sec
         "JOIN territorial_unit tu ON ST_Intersects(tu.geom, ref.g) "
         "JOIN dataset_version dv ON dv.version_id = tu.version_id "
         "WHERE dv.is_active = TRUE AND ref.g IS NOT NULL "
+        "AND ST_Area(ST_Intersection(tu.geom, ref.g)::geography) > 1.0 "
         "ORDER BY intersected_area_m2 DESC, tu.unit_code ASC";
 
     auto res = exec_params(conn->get(), sql.c_str(), gq->params);
@@ -940,7 +941,7 @@ PostgisStore::get_map_features(const nlohmann::json& req, const domain::Security
             "JOIN hydro_feature h ON ST_Intersects(h.geom, ref.g) "
             "JOIN dataset_version dv ON dv.version_id = h.version_id "
             "WHERE dv.is_active = TRUE AND ref.g IS NOT NULL "
-            "LIMIT 800";
+            "LIMIT 4000";
         auto hres = exec_params(conn->get(), hsql.c_str(), gq->params);
         if (hres) {
             for (int i = 0; i < PQntuples(hres->get()); ++i) {

@@ -105,21 +105,49 @@
 
             <form id="explore-form" class="query-bar">
               <select id="ref-kind" aria-label="Tipo de referência territorial">
-                <option value="MUNICIPALITY" selected>Município (Nome ou IBGE)</option>
-                <option value="STREET">Logradouro (IBGE Faces 2022)</option>
-                <option value="CEP">CEP (Categoria A)</option>
+                <option value="DISTRICT" selected>Distrito / Localidade rural (IBGE)</option>
+                <option value="GRID_CELL">Grade métrica regular (500 m – 5 km)</option>
+                <option value="MUNICIPALITY">Município (Nome ou IBGE)</option>
                 <option value="POINT">Ponto (Lon, Lat)</option>
+                <option value="CEP">CEP (Categoria A)</option>
+                <option value="STREET">Logradouro (IBGE Faces 2022)</option>
               </select>
-              <input id="ref-value" type="text" list="municipality-datalist" placeholder="Nome do município ou código IBGE (ex: Bagé, Porto Alegre, 4314902)" aria-label="Valor da referência" required>
+              <input id="ref-value" type="text" list="municipality-datalist" placeholder="Distrito ou código IBGE (ex: Joca Tavares, Palmas, Piraí, 430160217)" aria-label="Valor da referência" required>
               <datalist id="municipality-datalist"></datalist>
               <button type="submit" class="button primary">Investigar</button>
             </form>
+            <div id="grid-size-wrap" class="form-field" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px;" hidden>
+              <div>
+                <label for="ref-grid-size">Dimensão da célula métrica (EPSG:5880)</label>
+                <select id="ref-grid-size">
+                  <option value="500">500 m × 500 m (25 ha)</option>
+                  <option value="1000" selected>1 km × 1 km (100 ha)</option>
+                  <option value="2000">2 km × 2 km (400 ha)</option>
+                  <option value="5000">5 km × 5 km (2.500 ha)</option>
+                </select>
+              </div>
+            </div>
+            <div id="district-opts-wrap" class="form-field" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+                <input id="ref-rural-only" type="checkbox" checked> Apenas setores rurais do distrito
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+                Unidade de investigação:
+                <select id="ref-district-grid">
+                  <option value="0" selected>Distrito completo</option>
+                  <option value="500">Célula 500 m × 500 m (25 ha) no ponto âncora</option>
+                  <option value="1000">Célula 1 km × 1 km (100 ha) no ponto âncora</option>
+                  <option value="2000">Célula 2 km × 2 km (400 ha) no ponto âncora</option>
+                  <option value="5000">Célula 5 km × 5 km (2.500 ha) no ponto âncora</option>
+                </select>
+              </label>
+            </div>
             <div id="radius-wrap" class="form-field" style="max-width:240px;margin-bottom:12px;" hidden>
               <label for="ref-radius">Raio opcional (metros)</label>
               <input id="ref-radius" type="number" min="0" max="50000" value="1000">
             </div>
 
-            <p id="explore-notice" class="notice-box" role="status" aria-live="polite">Informe um município (ex.: 4314902), ponto ou selecione uma área diretamente no mapa.</p>
+            <p id="explore-notice" class="notice-box" role="status" aria-live="polite">Informe um distrito rural (ex.: Joca Tavares, Palmas, Piraí), célula métrica, município ou selecione uma área diretamente no mapa.</p>
 
             <div class="explore-grid">
               <div class="map-box">

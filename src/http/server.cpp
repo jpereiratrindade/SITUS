@@ -147,27 +147,45 @@ bhttp::response<bhttp::string_body> handle_request(
         return make_json_response(bhttp::status::ok, *res, ver, ka);
     }
 
-    if (req.method() == bhttp::verb::get && target == "/api/v1/municipalities") {
-        std::string q;
-        std::string full_target(req.target());
-        if (auto pos = full_target.find("q="); pos != std::string::npos) {
-            std::string raw_q = full_target.substr(pos + 2);
-            if (auto amp = raw_q.find('&'); amp != std::string::npos) raw_q.resize(amp);
-            for (std::size_t i = 0; i < raw_q.size(); ++i) {
-                if (raw_q[i] == '+') q.push_back(' ');
-                else if (raw_q[i] == '%' && i + 2 < raw_q.size()) {
-                    unsigned int hex = 0;
-                    if (sscanf(raw_q.substr(i + 1, 2).c_str(), "%x", &hex) == 1) {
-                        q.push_back(static_cast<char>(hex));
-                        i += 2;
-                    }
-                } else {
-                    q.push_back(raw_q[i]);
+    auto extract_query_param = [](std::string_view full_target, std::string_view key) -> std::string {
+        const std::string needle = std::string(key) + "=";
+        auto pos = full_target.find(needle);
+        if (pos == std::string_view::npos) return {};
+        // Ensure match is at '?' or '&' boundary
+        if (pos > 0 && full_target[pos - 1] != '?' && full_target[pos - 1] != '&') {
+            return {};
+        }
+        std::string raw_q(full_target.substr(pos + needle.size()));
+        if (auto amp = raw_q.find('&'); amp != std::string::npos) raw_q.resize(amp);
+        std::string out;
+        out.reserve(raw_q.size());
+        for (std::size_t i = 0; i < raw_q.size(); ++i) {
+            if (raw_q[i] == '+') out.push_back(' ');
+            else if (raw_q[i] == '%' && i + 2 < raw_q.size()) {
+                unsigned int hex = 0;
+                if (sscanf(raw_q.substr(i + 1, 2).c_str(), "%x", &hex) == 1) {
+                    out.push_back(static_cast<char>(hex));
+                    i += 2;
                 }
+            } else {
+                out.push_back(raw_q[i]);
             }
         }
+        return out;
+    };
+
+    if (req.method() == bhttp::verb::get && target == "/api/v1/municipalities") {
+        const std::string q = extract_query_param(req.target(), "q");
         auto res = service.search_municipalities(q);
         if (!res) return make_error_response(bhttp::status::service_unavailable, "MUNICIPALITY_SEARCH_FAILED", res.error(), ver, ka);
+        return make_json_response(bhttp::status::ok, *res, ver, ka);
+    }
+
+    if (req.method() == bhttp::verb::get && target == "/api/v1/districts") {
+        const std::string q = extract_query_param(req.target(), "q");
+        const std::string mun = extract_query_param(req.target(), "municipality_code");
+        auto res = service.search_districts(q, mun);
+        if (!res) return make_error_response(bhttp::status::service_unavailable, "DISTRICT_SEARCH_FAILED", res.error(), ver, ka);
         return make_json_response(bhttp::status::ok, *res, ver, ka);
     }
 

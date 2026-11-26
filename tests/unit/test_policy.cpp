@@ -81,6 +81,24 @@ int main() {
     assert(validate_cep_syntax("90010-150").has_value());
     assert(!validate_cep_syntax("90010").has_value());
 
+    // 5. Validacao de distrito e grade metrica (SITUS-DIR-002 / EXEC-002)
+    assert(validate_district_code("430160217").has_value());
+    assert(!validate_district_code("4301602").has_value());
+    assert(validate_grid_cell_size_m(500).has_value());
+    assert(validate_grid_cell_size_m(1000).has_value());
+    assert(validate_grid_cell_size_m(2000).has_value());
+    assert(validate_grid_cell_size_m(5000).has_value());
+    assert(!validate_grid_cell_size_m(250).has_value());
+    {
+        auto parsed = parse_grid_cell_id("GRID5880_1000_-384_5556");
+        assert(parsed.has_value());
+        assert(parsed->cell_size_m == 1000);
+        assert(parsed->ix == -384);
+        assert(parsed->iy == 5556);
+        assert(!parse_grid_cell_id("GRID3857_1000_0_0").has_value());
+        assert(!parse_grid_cell_id("GRID5880_250_0_0").has_value());
+    }
+
     std::cout << "[PASS] test_policy\n";
     return 0;
 }

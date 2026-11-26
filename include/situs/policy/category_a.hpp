@@ -42,7 +42,17 @@ validate_category_a_source(const nlohmann::json& source_json);
 [[nodiscard]] std::expected<void, std::string> validate_crs(const std::string& crs);
 [[nodiscard]] std::expected<void, std::string> validate_wgs84_point(double lon, double lat);
 [[nodiscard]] std::expected<void, std::string> validate_municipality_code(const std::string& code);
+[[nodiscard]] std::expected<void, std::string> validate_district_code(const std::string& code);
 [[nodiscard]] std::expected<void, std::string> validate_cep_syntax(const std::string& cep);
+[[nodiscard]] std::expected<void, std::string> validate_grid_cell_size_m(int cell_size_m);
+
+struct GridCellId {
+    int cell_size_m = 1000;
+    long long ix = 0;
+    long long iy = 0;
+};
+
+[[nodiscard]] std::expected<GridCellId, std::string> parse_grid_cell_id(const std::string& cell_id);
 [[nodiscard]] std::expected<std::size_t, std::string> count_geojson_vertices(
     const nlohmann::json& geom,
     std::size_t max_vertices

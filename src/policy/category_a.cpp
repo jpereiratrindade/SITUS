@@ -107,6 +107,52 @@ std::expected<void, std::string> validate_municipality_code(const std::string& c
     return {};
 }
 
+std::expected<void, std::string> validate_district_code(const std::string& code) {
+    if (code.size() != 9 || !std::ranges::all_of(code, [](unsigned char c) { return std::isdigit(c); })) {
+        return std::unexpected("Codigo IBGE de distrito deve ter 9 digitos numericos");
+    }
+    return {};
+}
+
+std::expected<void, std::string> validate_grid_cell_size_m(int cell_size_m) {
+    if (cell_size_m != 500 && cell_size_m != 1000 && cell_size_m != 2000 && cell_size_m != 5000) {
+        return std::unexpected("Dimensao da grade metrica deve ser 500, 1000, 2000 ou 5000 metros");
+    }
+    return {};
+}
+
+std::expected<GridCellId, std::string> parse_grid_cell_id(const std::string& cell_id) {
+    const std::string prefix = "GRID5880_";
+    if (!cell_id.starts_with(prefix)) {
+        return std::unexpected("Identificador de celula deve iniciar com GRID5880_");
+    }
+    const std::string rest = cell_id.substr(prefix.size());
+    const auto p1 = rest.find('_');
+    if (p1 == std::string::npos) {
+        return std::unexpected("Formato invalido de celula; esperado GRID5880_<S>_<ix>_<iy>");
+    }
+    const auto p2 = rest.find('_', p1 + 1);
+    if (p2 == std::string::npos || rest.find('_', p2 + 1) != std::string::npos) {
+        return std::unexpected("Formato invalido de celula; esperado GRID5880_<S>_<ix>_<iy>");
+    }
+    try {
+        std::size_t idx = 0;
+        const std::string s_str = rest.substr(0, p1);
+        const std::string ix_str = rest.substr(p1 + 1, p2 - p1 - 1);
+        const std::string iy_str = rest.substr(p2 + 1);
+        const int size_m = std::stoi(s_str, &idx);
+        if (idx != s_str.size()) return std::unexpected("Dimensao invalida em cell_id");
+        if (auto v = validate_grid_cell_size_m(size_m); !v) return std::unexpected(v.error());
+        const long long ix = std::stoll(ix_str, &idx);
+        if (idx != ix_str.size()) return std::unexpected("Indice ix invalido em cell_id");
+        const long long iy = std::stoll(iy_str, &idx);
+        if (idx != iy_str.size()) return std::unexpected("Indice iy invalido em cell_id");
+        return GridCellId{size_m, ix, iy};
+    } catch (...) {
+        return std::unexpected("Falha ao interpretar identificador de celula GRID5880");
+    }
+}
+
 std::expected<void, std::string> validate_cep_syntax(const std::string& cep) {
     std::string digits;
     digits.reserve(cep.size());

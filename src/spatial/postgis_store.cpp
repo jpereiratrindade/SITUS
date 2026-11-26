@@ -79,6 +79,145 @@ struct GeomQuery {
     std::string support_note;
 };
 
+struct DistrictMatch {
+    std::string district_code;
+    std::string district_name;
+    std::string municipality_code;
+    std::string municipality_name;
+    int sector_count = 0;
+    double area_m2 = 0.0;
+};
+
+std::expected<std::vector<DistrictMatch>, std::string> lookup_districts(
+    PGconn* conn,
+    const nlohmann::json& req
+) {
+    if (!req.contains("value") || !req["value"].is_string()) {
+        return std::unexpected("value para DISTRICT deve ser string (nome do distrito ou codigo IBGE de 9 digitos)");
+    }
+    const std::string raw = req["value"].get<std::string>();
+    if (raw.empty()) {
+        return std::unexpected("Informe o nome do distrito ou codigo IBGE de 9 digitos");
+    }
+    const std::string mun_code = req.value("municipality_code", "");
+    if (!mun_code.empty()) {
+        if (auto v = policy::validate_municipality_code(mun_code); !v) {
+            return std::unexpected(v.error());
+        }
+    }
+    const bool rural_only = req.value("rural_only", false);
+    const std::string rural_filter = rural_only ? " AND tu.situation_label = 'Rural'" : "";
+
+    auto res = [&]() {
+        if (policy::validate_district_code(raw).has_value()) {
+            const std::string sql =
+                "SELECT tu.attributes->>'CD_DIST', tu.district_name, tu.municipality_code, tu.municipality_name, "
+                "COUNT(*)::int, COALESCE(SUM(tu.area_m2), 0.0) "
+                "FROM territorial_unit tu "
+                "JOIN dataset_version dv ON dv.version_id = tu.version_id "
+                "WHERE dv.is_active = TRUE AND tu.attributes->>'CD_DIST' = $1" + rural_filter + " "
+                "GROUP BY tu.attributes->>'CD_DIST', tu.district_name, tu.municipality_code, tu.municipality_name";
+            return exec_params(conn, sql.c_str(), {raw});
+        }
+        if (!mun_code.empty()) {
+            const std::string sql =
+                "SELECT tu.attributes->>'CD_DIST', tu.district_name, tu.municipality_code, tu.municipality_name, "
+                "COUNT(*)::int, COALESCE(SUM(tu.area_m2), 0.0) "
+                "FROM territorial_unit tu "
+                "JOIN dataset_version dv ON dv.version_id = tu.version_id "
+                "WHERE dv.is_active = TRUE AND tu.municipality_code = $1 "
+                "AND LOWER(tu.district_name) = LOWER($2)" + rural_filter + " "
+                "GROUP BY tu.attributes->>'CD_DIST', tu.district_name, tu.municipality_code, tu.municipality_name "
+                "ORDER BY tu.district_name ASC";
+            return exec_params(conn, sql.c_str(), {mun_code, raw});
+        }
+        const std::string sql =
+            "SELECT tu.attributes->>'CD_DIST', tu.district_name, tu.municipality_code, tu.municipality_name, "
+            "COUNT(*)::int, COALESCE(SUM(tu.area_m2), 0.0) "
+            "FROM territorial_unit tu "
+            "JOIN dataset_version dv ON dv.version_id = tu.version_id "
+            "WHERE dv.is_active = TRUE AND LOWER(tu.district_name) = LOWER($1)" + rural_filter + " "
+            "GROUP BY tu.attributes->>'CD_DIST', tu.district_name, tu.municipality_code, tu.municipality_name "
+            "ORDER BY tu.municipality_name ASC, tu.district_name ASC "
+            "LIMIT 20";
+        return exec_params(conn, sql.c_str(), {raw});
+    }();
+    if (!res) return std::unexpected(res.error());
+
+    std::vector<DistrictMatch> out;
+    const int n = PQntuples(res->get());
+    out.reserve(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        out.push_back(DistrictMatch{
+            PQgetvalue(res->get(), i, 0),
+            PQgetvalue(res->get(), i, 1),
+            PQgetvalue(res->get(), i, 2),
+            PQgetvalue(res->get(), i, 3),
+            std::atoi(PQgetvalue(res->get(), i, 4)),
+            std::strtod(PQgetvalue(res->get(), i, 5), nullptr)
+        });
+    }
+    return out;
+}
+
+struct GridSpecResolved {
+    int cell_size_m = 1000;
+    long long ix = 0;
+    long long iy = 0;
+    std::string cell_id;
+    bool from_point = false;
+    double lon = 0.0;
+    double lat = 0.0;
+};
+
+std::expected<GridSpecResolved, std::string> resolve_grid_spec(
+    PGconn* conn,
+    const nlohmann::json& req
+) {
+    if (!req.contains("value")) {
+        return std::unexpected("Campo value obrigatorio para GRID_CELL ([lon, lat] ou GRID5880_<S>_<ix>_<iy>)");
+    }
+    if (req["value"].is_string()) {
+        auto parsed = policy::parse_grid_cell_id(req["value"].get<std::string>());
+        if (!parsed) return std::unexpected(parsed.error());
+        return GridSpecResolved{
+            parsed->cell_size_m,
+            parsed->ix,
+            parsed->iy,
+            req["value"].get<std::string>(),
+            false, 0.0, 0.0
+        };
+    }
+    if (req["value"].is_array() && req["value"].size() >= 2 &&
+        req["value"][0].is_number() && req["value"][1].is_number()) {
+        const double lon = req["value"][0].get<double>();
+        const double lat = req["value"][1].get<double>();
+        if (auto v = policy::validate_wgs84_point(lon, lat); !v) {
+            return std::unexpected(v.error());
+        }
+        const int cell_size_m = req.value("cell_size_m", 1000);
+        if (auto v = policy::validate_grid_cell_size_m(cell_size_m); !v) {
+            return std::unexpected(v.error());
+        }
+        auto res = exec_params(
+            conn,
+            "SELECT FLOOR(ST_X(p) / $3::double precision)::bigint, "
+            "FLOOR(ST_Y(p) / $3::double precision)::bigint "
+            "FROM (SELECT ST_Transform(ST_SetSRID(ST_MakePoint($1::double precision, $2::double precision), 4326), 5880) AS p) s",
+            {std::to_string(lon), std::to_string(lat), std::to_string(cell_size_m)}
+        );
+        if (!res) return std::unexpected(res.error());
+        if (PQntuples(res->get()) == 0) {
+            return std::unexpected("Falha ao projetar coordenada para EPSG:5880");
+        }
+        const long long ix = std::stoll(PQgetvalue(res->get(), 0, 0));
+        const long long iy = std::stoll(PQgetvalue(res->get(), 0, 1));
+        const std::string cid = "GRID5880_" + std::to_string(cell_size_m) + "_" + std::to_string(ix) + "_" + std::to_string(iy);
+        return GridSpecResolved{cell_size_m, ix, iy, cid, true, lon, lat};
+    }
+    return std::unexpected("value para GRID_CELL deve ser [lon, lat] ou identificador GRID5880_<S>_<ix>_<iy>");
+}
+
 std::expected<GeomQuery, std::string> build_reference_geom_query(
     PGconn* conn,
     const nlohmann::json& req,
@@ -126,6 +265,39 @@ std::expected<GeomQuery, std::string> build_reference_geom_query(
             "(SELECT ST_Union(geom) FROM territorial_unit tu JOIN dataset_version dv ON dv.version_id = tu.version_id WHERE dv.is_active = TRUE AND tu.municipality_code = $1)",
             {code},
             "Uniao dos setores censitarios ativos do municipio IBGE " + code
+        };
+    }
+
+    if (kind == "DISTRICT") {
+        auto matches = lookup_districts(conn, req);
+        if (!matches) return std::unexpected(matches.error());
+        if (matches->empty()) {
+            return std::unexpected("Distrito nao encontrado na malha oficial do RS");
+        }
+        if (matches->size() > 1) {
+            return std::unexpected("Nome de distrito ambiguo entre municipios; informe municipality_code ou codigo IBGE de distrito (9 digitos)");
+        }
+        const auto& m = matches->front();
+        const bool rural_only = req.value("rural_only", false);
+        const std::string rural_filter = rural_only ? " AND tu.situation_label = 'Rural'" : "";
+        return GeomQuery{
+            "(SELECT ST_Union(geom) FROM territorial_unit tu JOIN dataset_version dv ON dv.version_id = tu.version_id WHERE dv.is_active = TRUE AND tu.attributes->>'CD_DIST' = $1" + rural_filter + ")",
+            {m.district_code},
+            "Uniao dos setores censitarios IBGE 2022 do distrito " + m.district_name + " (" + m.district_code + ")"
+        };
+    }
+
+    if (kind == "GRID_CELL") {
+        auto gs = resolve_grid_spec(conn, req);
+        if (!gs) return std::unexpected(gs.error());
+        const double x0 = static_cast<double>(gs->ix) * static_cast<double>(gs->cell_size_m);
+        const double y0 = static_cast<double>(gs->iy) * static_cast<double>(gs->cell_size_m);
+        const double x1 = x0 + static_cast<double>(gs->cell_size_m);
+        const double y1 = y0 + static_cast<double>(gs->cell_size_m);
+        return GeomQuery{
+            "ST_Transform(ST_MakeEnvelope($1::double precision, $2::double precision, $3::double precision, $4::double precision, 5880), 4326)",
+            {std::to_string(x0), std::to_string(y0), std::to_string(x1), std::to_string(y1)},
+            "Celula metrica regular " + gs->cell_id + " (" + std::to_string(gs->cell_size_m) + " m x " + std::to_string(gs->cell_size_m) + " m em EPSG:5880)"
         };
     }
 
@@ -365,6 +537,141 @@ PostgisStore::resolve_reference(const nlohmann::json& req, const domain::Securit
         return std::unexpected("Payload deve ser objeto JSON");
     }
     const std::string kind = req.value("kind", "");
+
+    if (kind == "DISTRICT") {
+        auto conn = connect_pg(conninfo_);
+        if (!conn) return std::unexpected(conn.error());
+        auto matches = lookup_districts(conn->get(), req);
+        if (!matches) return std::unexpected(matches.error());
+        if (matches->empty()) {
+            return nlohmann::json{
+                {"status", "OUTSIDE_COVERAGE"},
+                {"kind", "DISTRICT"},
+                {"spatial_level", "DISTRITO"},
+                {"support_geometry", nullptr},
+                {"analysis_geometry", nullptr},
+                {"reasons", nlohmann::json::array({"Distrito nao encontrado na cobertura territorial ativa"})}
+            };
+        }
+        if (matches->size() > 1) {
+            nlohmann::json arr = nlohmann::json::array();
+            for (const auto& m : *matches) {
+                arr.push_back({
+                    {"district_code", m.district_code},
+                    {"district_name", m.district_name},
+                    {"municipality_code", m.municipality_code},
+                    {"municipality_name", m.municipality_name},
+                    {"sector_count", m.sector_count},
+                    {"area_m2", m.area_m2}
+                });
+            }
+            return nlohmann::json{
+                {"status", "AMBIGUOUS"},
+                {"kind", "DISTRICT"},
+                {"spatial_level", "DISTRITO"},
+                {"matches", arr},
+                {"support_geometry", nullptr},
+                {"analysis_geometry", nullptr},
+                {"reasons", nlohmann::json::array({"Nome de distrito presente em multiplos municipios; selecione o distrito desejado."})}
+            };
+        }
+        const auto& m = matches->front();
+        const bool rural_only = req.value("rural_only", false);
+        const std::string rural_filter = rural_only ? " AND tu.situation_label = 'Rural'" : "";
+        const std::string sql =
+            "WITH ref AS ("
+            "  SELECT ST_Union(geom) AS g FROM territorial_unit tu "
+            "  JOIN dataset_version dv ON dv.version_id = tu.version_id "
+            "  WHERE dv.is_active = TRUE AND tu.attributes->>'CD_DIST' = $1" + rural_filter +
+            ") "
+            "SELECT COALESCE(ST_Area(g::geography), 0.0), "
+            "COALESCE(ST_AsGeoJSON(ST_SimplifyPreserveTopology(g, 0.0005)), 'null'), "
+            "COALESCE(ST_AsGeoJSON(g), 'null'), "
+            "ST_X(ST_PointOnSurface(g)), ST_Y(ST_PointOnSurface(g)) "
+            "FROM ref";
+        auto res = exec_params(conn->get(), sql.c_str(), {m.district_code});
+        if (!res) return std::unexpected(res.error());
+        const double area_m2 = std::strtod(PQgetvalue(res->get(), 0, 0), nullptr);
+        const double pt_lon = std::strtod(PQgetvalue(res->get(), 0, 3), nullptr);
+        const double pt_lat = std::strtod(PQgetvalue(res->get(), 0, 4), nullptr);
+        return nlohmann::json{
+            {"status", "RESOLVED"},
+            {"kind", "DISTRICT"},
+            {"spatial_level", "DISTRITO"},
+            {"method", "ibge_2022_sector_union_by_cd_dist"},
+            {"district_code", m.district_code},
+            {"district_name", m.district_name},
+            {"municipality_code", m.municipality_code},
+            {"municipality_name", m.municipality_name},
+            {"rural_only", rural_only},
+            {"sector_count", m.sector_count},
+            {"area_m2", area_m2},
+            {"anchor_point", nlohmann::json::array({pt_lon, pt_lat})},
+            {"support_geometry", nlohmann::json::parse(PQgetvalue(res->get(), 0, 1))},
+            {"analysis_geometry", nlohmann::json::parse(PQgetvalue(res->get(), 0, 2))},
+            {"reasons", nlohmann::json::array({
+                "Geometria distrital construida pela uniao dos setores censitarios IBGE 2022 (" +
+                std::to_string(m.sector_count) + " setores); confrontacao com limite distrital oficial pendente de fonte dedicada."
+            })}
+        };
+    }
+
+    if (kind == "GRID_CELL") {
+        auto conn = connect_pg(conninfo_);
+        if (!conn) return std::unexpected(conn.error());
+        auto gs = resolve_grid_spec(conn->get(), req);
+        if (!gs) return std::unexpected(gs.error());
+
+        const double x0 = static_cast<double>(gs->ix) * static_cast<double>(gs->cell_size_m);
+        const double y0 = static_cast<double>(gs->iy) * static_cast<double>(gs->cell_size_m);
+        const double x1 = x0 + static_cast<double>(gs->cell_size_m);
+        const double y1 = y0 + static_cast<double>(gs->cell_size_m);
+
+        auto res = exec_params(
+            conn->get(),
+            "WITH cell AS ("
+            "  SELECT ST_Transform(ST_MakeEnvelope($1::double precision, $2::double precision, $3::double precision, $4::double precision, 5880), 4326) AS g"
+            ") "
+            "SELECT ST_Area(g::geography), ST_AsGeoJSON(g), ST_X(ST_Centroid(g)), ST_Y(ST_Centroid(g)) FROM cell",
+            {std::to_string(x0), std::to_string(y0), std::to_string(x1), std::to_string(y1)}
+        );
+        if (!res) return std::unexpected(res.error());
+        const double area_m2 = std::strtod(PQgetvalue(res->get(), 0, 0), nullptr);
+        auto cell_geom = nlohmann::json::parse(PQgetvalue(res->get(), 0, 1));
+        const double c_lon = std::strtod(PQgetvalue(res->get(), 0, 2), nullptr);
+        const double c_lat = std::strtod(PQgetvalue(res->get(), 0, 3), nullptr);
+        nlohmann::json support_geom = cell_geom;
+        if (gs->from_point) {
+            support_geom = {
+                {"type", "Point"},
+                {"coordinates", nlohmann::json::array({gs->lon, gs->lat})}
+            };
+        }
+        return nlohmann::json{
+            {"status", "RESOLVED"},
+            {"kind", "GRID_CELL"},
+            {"spatial_level", "GRADE_METRICA"},
+            {"method", "on_demand_metric_grid_epsg5880"},
+            {"area_m2", area_m2},
+            {"grid_spec", {
+                {"crs", "EPSG:5880"},
+                {"crs_name", "SIRGAS 2000 / Brazil Polyconic"},
+                {"origin_m", nlohmann::json::array({0.0, 0.0})},
+                {"cell_size_m", gs->cell_size_m},
+                {"ix", gs->ix},
+                {"iy", gs->iy},
+                {"cell_id", gs->cell_id},
+                {"bounds_5880_m", nlohmann::json::array({x0, y0, x1, y1})},
+                {"nominal_area_ha", (static_cast<double>(gs->cell_size_m) * static_cast<double>(gs->cell_size_m)) / 10000.0},
+                {"centroid_wgs84", nlohmann::json::array({c_lon, c_lat})}
+            }},
+            {"support_geometry", support_geom},
+            {"analysis_geometry", cell_geom},
+            {"reasons", nlohmann::json::array({
+                "Unidade espacial regular gerada sob demanda em EPSG:5880 (origem 0,0), independente da estrutura fundiaria."
+            })}
+        };
+    }
 
     if (kind == "CEP") {
         if (!req.contains("value") || !req["value"].is_string()) {
@@ -751,6 +1058,48 @@ PostgisStore::search_municipalities(const std::string& query) const {
         });
     }
     return nlohmann::json{{"municipalities", arr}};
+}
+
+std::expected<nlohmann::json, std::string>
+PostgisStore::search_districts(const std::string& query, const std::string& municipality_code) const {
+    if (!municipality_code.empty()) {
+        if (auto v = policy::validate_municipality_code(municipality_code); !v) {
+            return std::unexpected(v.error());
+        }
+    }
+    auto conn = connect_pg(conninfo_);
+    if (!conn) return std::unexpected(conn.error());
+
+    auto res = exec_params(
+        conn->get(),
+        "SELECT tu.attributes->>'CD_DIST' AS cd_dist, tu.district_name, "
+        "tu.municipality_code, tu.municipality_name, "
+        "COUNT(*) FILTER (WHERE tu.situation_label = 'Rural')::int AS rural_sectors, "
+        "COUNT(*)::int AS total_sectors "
+        "FROM territorial_unit tu "
+        "JOIN dataset_version dv ON dv.version_id = tu.version_id "
+        "WHERE dv.is_active = TRUE AND COALESCE(tu.district_name, '') <> '' "
+        "AND ($1 = '' OR tu.municipality_code = $1) "
+        "AND ($2 = '' OR tu.district_name ILIKE '%' || $2 || '%' OR tu.municipality_name ILIKE '%' || $2 || '%' OR tu.attributes->>'CD_DIST' LIKE $2 || '%') "
+        "GROUP BY tu.attributes->>'CD_DIST', tu.district_name, tu.municipality_code, tu.municipality_name "
+        "ORDER BY rural_sectors DESC, tu.municipality_name ASC, tu.district_name ASC "
+        "LIMIT 30",
+        {municipality_code, query}
+    );
+    if (!res) return std::unexpected(res.error());
+
+    nlohmann::json arr = nlohmann::json::array();
+    for (int i = 0; i < PQntuples(res->get()); ++i) {
+        arr.push_back({
+            {"district_code", PQgetvalue(res->get(), i, 0)},
+            {"district_name", PQgetvalue(res->get(), i, 1)},
+            {"municipality_code", PQgetvalue(res->get(), i, 2)},
+            {"municipality_name", PQgetvalue(res->get(), i, 3)},
+            {"rural_sectors", std::atoi(PQgetvalue(res->get(), i, 4))},
+            {"total_sectors", std::atoi(PQgetvalue(res->get(), i, 5))}
+        });
+    }
+    return nlohmann::json{{"districts", arr}};
 }
 
 std::expected<nlohmann::json, std::string>

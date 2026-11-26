@@ -122,6 +122,29 @@
     function buildReferenceFromForm() {
         const kind = document.getElementById('ref-kind').value;
         const rawVal = document.getElementById('ref-value').value.trim();
+        if (kind === 'DISTRICT') {
+            const ruralOnly = !!document.getElementById('ref-rural-only')?.checked;
+            const gridSize = Number(document.getElementById('ref-district-grid')?.value || 0);
+            const commaIdx = rawVal.lastIndexOf(',');
+            const ref = { kind: 'DISTRICT', value: rawVal, rural_only: ruralOnly, crs: 'EPSG:4326' };
+            if (commaIdx > 0) {
+                ref.value = rawVal.slice(0, commaIdx).trim();
+                ref.municipality_code = rawVal.slice(commaIdx + 1).trim();
+            }
+            if (gridSize > 0) ref.target_grid_size_m = gridSize;
+            return ref;
+        }
+        if (kind === 'GRID_CELL') {
+            const cellSize = Number(document.getElementById('ref-grid-size')?.value || 1000);
+            if (rawVal.startsWith('GRID5880_')) {
+                return { kind: 'GRID_CELL', value: rawVal, crs: 'EPSG:4326' };
+            }
+            const parts = rawVal.split(',').map(x => Number(x.trim()));
+            if (parts.length !== 2 || parts.some(Number.isNaN)) {
+                throw new Error('Informe coordenada (lon, lat) ou código GRID5880_<S>_<ix>_<iy>');
+            }
+            return { kind: 'GRID_CELL', value: parts, cell_size_m: cellSize, crs: 'EPSG:4326' };
+        }
         if (kind === 'MUNICIPALITY') {
             return { kind: 'MUNICIPALITY', value: rawVal, crs: 'EPSG:4326' };
         }
@@ -210,6 +233,41 @@
                 });
                 notice.textContent = 'Consulta concluída (sem cobertura ou fonte indisponível).';
                 return;
+            }
+
+            if (refData.status === 'AMBIGUOUS' && refData.kind === 'DISTRICT') {
+                window.SitusMap.setData({ features: [] }, null);
+                const matchesHtml = (refData.matches || []).map(m => `
+                    <article class="obs-card nodata">
+                        <h4>${escapeHtml(m.district_name)} · ${escapeHtml(m.municipality_name)} (${escapeHtml(m.municipality_code)})</h4>
+                        <p class="muted">Distrito IBGE ${escapeHtml(m.district_code)} · ${escapeHtml(String(m.sector_count))} setores · ${fmtAreaHa(m.area_m2)}</p>
+                        <button type="button" class="button outline pick-district-btn" data-dist="${escapeHtml(m.district_code)}">Investigar distrito</button>
+                    </article>
+                `).join('');
+                inspector.innerHTML = `
+                    <span class="badge warn">DISTRITO AMBÍGUO</span>
+                    <h3>Múltiplos municípios possuem distrito com este nome</h3>
+                    ${matchesHtml}
+                `;
+                inspector.querySelectorAll('.pick-district-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const nextRef = { kind: 'DISTRICT', value: btn.dataset.dist, rural_only: !!reference.rural_only, crs: 'EPSG:4326' };
+                        if (reference.target_grid_size_m) nextRef.target_grid_size_m = reference.target_grid_size_m;
+                        runInvestigation(nextRef);
+                    });
+                });
+                notice.textContent = 'Distrito ambíguo entre municípios; selecione o desejado.';
+                return;
+            }
+
+            if (refData.kind === 'DISTRICT' && refData.status === 'RESOLVED' && reference.target_grid_size_m > 0 && Array.isArray(refData.anchor_point)) {
+                return runInvestigation({
+                    kind: 'GRID_CELL',
+                    value: refData.anchor_point,
+                    cell_size_m: reference.target_grid_size_m,
+                    context_label: `${refData.district_name} (${refData.municipality_name})`,
+                    crs: 'EPSG:4326'
+                }, { pushHistory: false });
             }
 
             if (refData.status === 'AMBIGUOUS' && refData.kind === 'STREET') {
@@ -642,13 +700,21 @@
             const k = ev.target.value;
             const inp = document.getElementById('ref-value');
             const radWrap = document.getElementById('radius-wrap');
+            const gridWrap = document.getElementById('grid-size-wrap');
+            const distWrap = document.getElementById('district-opts-wrap');
             radWrap.hidden = k !== 'POINT';
+            if (gridWrap) gridWrap.hidden = k !== 'GRID_CELL';
+            if (distWrap) distWrap.hidden = k !== 'DISTRICT';
             if (k === 'MUNICIPALITY') {
                 inp.setAttribute('list', 'municipality-datalist');
                 inp.placeholder = 'Nome do município ou código IBGE (ex: Bagé, Porto Alegre, 4314902)';
+            } else if (k === 'DISTRICT') {
+                inp.setAttribute('list', 'municipality-datalist');
+                inp.placeholder = 'Distrito ou código IBGE (ex: Joca Tavares, Palmas, Piraí, 430160217)';
             } else {
                 inp.removeAttribute('list');
-                if (k === 'POINT') inp.placeholder = 'longitude, latitude (ex: -51.23, -30.03)';
+                if (k === 'GRID_CELL') inp.placeholder = 'Coordenada (lon, lat) ou código GRID5880_1000_... (ex: -53.82089, -30.91943)';
+                else if (k === 'POINT') inp.placeholder = 'longitude, latitude (ex: -51.23, -30.03)';
                 else if (k === 'STREET') inp.placeholder = 'Logradouro [, Município] (ex: Rua Rádio Cultura, Bagé)';
                 else if (k === 'CEP') inp.placeholder = 'CEP 8 dígitos (ex: 96540-000 Agudo, 90240-552 Porto Alegre)';
             }
@@ -656,18 +722,28 @@
 
         let munTimer = null;
         document.getElementById('ref-value')?.addEventListener('input', (ev) => {
-            if (document.getElementById('ref-kind').value !== 'MUNICIPALITY') return;
+            const k = document.getElementById('ref-kind').value;
+            if (k !== 'MUNICIPALITY' && k !== 'DISTRICT') return;
             const q = ev.target.value.trim();
             clearTimeout(munTimer);
             munTimer = setTimeout(async () => {
                 try {
-                    const res = await fetch('/api/v1/municipalities?q=' + encodeURIComponent(q));
+                    const url = k === 'DISTRICT'
+                        ? '/api/v1/districts?q=' + encodeURIComponent(q)
+                        : '/api/v1/municipalities?q=' + encodeURIComponent(q);
+                    const res = await fetch(url);
                     if (!res.ok) return;
                     const data = await res.json();
                     const dl = document.getElementById('municipality-datalist');
-                    dl.innerHTML = (data.municipalities || []).map(m =>
-                        `<option value="${escapeHtml(m.municipality_name)}">${escapeHtml(m.municipality_name)} (${escapeHtml(m.municipality_code)})</option>`
-                    ).join('');
+                    if (k === 'DISTRICT') {
+                        dl.innerHTML = (data.districts || []).map(d =>
+                            `<option value="${escapeHtml(d.district_name)}, ${escapeHtml(d.municipality_code)}">${escapeHtml(d.district_name)} — ${escapeHtml(d.municipality_name)} (${d.rural_sectors} rurais)</option>`
+                        ).join('');
+                    } else {
+                        dl.innerHTML = (data.municipalities || []).map(m =>
+                            `<option value="${escapeHtml(m.municipality_name)}">${escapeHtml(m.municipality_name)} (${escapeHtml(m.municipality_code)})</option>`
+                        ).join('');
+                    }
                 } catch (_) {}
             }, 180);
         });

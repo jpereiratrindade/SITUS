@@ -35,6 +35,13 @@ std::expected<nlohmann::json, std::string> SitusService::search_municipalities(c
     return store_.search_municipalities(query);
 }
 
+std::expected<nlohmann::json, std::string> SitusService::search_districts(
+    const std::string& query,
+    const std::string& municipality_code
+) const {
+    return store_.search_districts(query, municipality_code);
+}
+
 std::expected<nlohmann::json, std::string> SitusService::resolve_reference(const nlohmann::json& req) const {
     return store_.resolve_reference(req, cfg_.limits);
 }

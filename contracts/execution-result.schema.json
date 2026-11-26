@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://situs.local/contracts/execution-result.schema.json",
+  "title": "SITUS Portable Execution Result",
+  "type": "object",
+  "required": [
+    "status",
+    "requested_mode",
+    "selected_target",
+    "actual_target",
+    "decision_reason",
+    "operation_id",
+    "algorithm_version",
+    "contract_version",
+    "dataset_versions",
+    "method",
+    "native_resolution"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["COMPLETED", "UNAVAILABLE", "REJECTED", "CANCELLED", "FAILED"]
+    },
+    "requested_mode": { "type": "string" },
+    "selected_target": { "type": ["string", "null"] },
+    "actual_target": {
+      "type": ["string", "null"],
+      "enum": ["NATIVE_SERVER", "BROWSER_WASM", "HYBRID", null]
+    },
+    "decision_reason": { "type": "string" },
+    "fallback_reason": { "type": ["string", "null"] },
+    "operation_id": { "type": "string" },
+    "algorithm_version": { "type": "string" },
+    "contract_version": { "type": "string" },
+    "dataset_versions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "method": { "type": "string" },
+    "native_resolution": { "type": "string" },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["stage", "target"],
+        "properties": {
+          "stage": { "type": "string" },
+          "target": { "type": "string" }
+        }
+      }
+    },
+    "timings_ms": {
+      "type": "object",
+      "properties": {
+        "server_ms": { "type": ["number", "null"] },
+        "worker_ms": { "type": ["number", "null"] },
+        "transfer_ms": { "type": ["number", "null"] },
+        "total_ms": { "type": ["number", "null"] }
+      }
+    },
+    "bytes_transferred": { "type": ["integer", "null"] },
+    "output": { "type": ["object", "null"] }
+  }
+}

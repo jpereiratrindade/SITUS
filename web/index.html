@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071e38">
+  <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+  <title>SITUS · Explorar território</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/navigation.js" defer></script>
+  <script src="/js/execution.js" defer></script>
+  <script src="/js/map.js" defer></script>
+  <script src="/js/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Ir para o conteúdo</a>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#explorar">
+        <svg class="brand-svg" viewBox="0 0 64 64" aria-hidden="true">
+          <rect width="64" height="64" rx="14" fill="#0c2844" stroke="#2ea8e8" stroke-opacity="0.35"/>
+          <path d="M14 22 30 12 50 18 46 44 26 52 12 38Z" fill="none" stroke="#2ea8e8" stroke-width="3.5" stroke-linejoin="round"/>
+          <path d="M22 26 36 21 42 36 28 42Z" fill="#087f8c" fill-opacity="0.6" stroke="#8cd7ed" stroke-width="2.5" stroke-linejoin="round"/>
+          <circle cx="30" cy="12" r="3" fill="#8cd7ed"/>
+        </svg>
+        <span><small>ECOSSISTEMA SisTer</small><strong>SITUS</strong></span>
+      </a>
+      <p class="subtitle">Conhecimento territorial</p>
+      <p class="navlabel">ESPAÇO DE TRABALHO</p>
+      <nav aria-label="Seções">
+        <a class="active" href="#explorar" aria-current="page">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+          Explorar território
+        </a>
+        <a href="#camadas">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 12 12 17 22 12"/><polyline points="2 17 12 22 22 17"/></svg>
+          Camadas
+        </a>
+        <a href="#fontes">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Fontes e métodos
+        </a>
+        <a href="#estado">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Estado do sistema
+        </a>
+        <a href="#configuracoes">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09c-.66 0-1.25.4-1.51 1z"/></svg>
+          Configurações
+        </a>
+      </nav>
+      <div class="side-bottom">
+        <div class="principles">
+          <small>PRINCÍPIOS DE DESENVOLVIMENTO</small>
+          <p>Simples, leve.<br>Sempre pronto.<br>Sempre incompleto!</p>
+          <span>Categoria A estrita.<br>Explicitar o que ainda não sabemos.</span>
+        </div>
+        <p class="local">● &nbsp; Ambiente local <span>v0.2.0</span></p>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <span>SITUS <b>/</b> <strong id="page-name">Explorar território</strong></span>
+        <div class="topbar-badges">
+          <span id="wasm-badge" class="badge info">Verificando Wasm…</span>
+          <span id="connection" class="badge">Conectando…</span>
+        </div>
+      </header>
+
+      <main id="main">
+        <!-- EXPLORAR TERRITÓRIO -->
+        <div id="view-explorar" data-view="explorar">
+          <section class="hero">
+            <div>
+              <span class="eyebrow">CATEGORIA A · INVESTIGAÇÃO TERRITORIAL SUBMUNICIPAL</span>
+              <h1>Território com proveniência,<br><em>limites e método explícitos.</em></h1>
+              <p>Consulte municípios, coordenadas de referência ou áreas poligonais no Rio Grande do Sul sobre fontes públicas verificadas. Sem telemetria, sem mapas de terceiros e sem identificação pessoal.</p>
+            </div>
+            <svg class="hero-symbol" viewBox="0 0 120 120" aria-hidden="true">
+              <path d="M22 40 54 18 98 30 90 86 48 102 18 72Z" fill="none" stroke="#2ea8e8" stroke-width="3"/>
+              <path d="M36 48 64 36 78 68 50 80Z" fill="#087f8c" fill-opacity="0.45" stroke="#8cd7ed" stroke-width="2"/>
+              <line x1="54" y1="18" x2="64" y2="36" stroke="#2ea8e8" stroke-width="1.5" stroke-dasharray="3 3"/>
+              <line x1="98" y1="30" x2="78" y2="68" stroke="#2ea8e8" stroke-width="1.5" stroke-dasharray="3 3"/>
+              <circle cx="54" cy="18" r="4" fill="#8cd7ed"/>
+              <circle cx="98" cy="30" r="4" fill="#2ea8e8"/>
+              <circle cx="48" cy="102" r="4" fill="#8cd7ed"/>
+            </svg>
+          </section>
+
+          <div class="stats">
+            <article><span>Fontes ativas (Categoria A)</span><strong id="stat-sources">—</strong><small id="stat-sources-note">Consultando catálogo local</small></article>
+            <article><span>Unidades territoriais</span><strong id="stat-units">—</strong><small>Setores censitários indexados em PostGIS</small></article>
+            <article><span>Política de execução</span><strong id="stat-exec">AUTO</strong><small id="stat-exec-note">Verificando destinos</small></article>
+          </div>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">CONSULTA EFÊMERA · ZERO PERSISTÊNCIA</span>
+                <h2>Exploração espacial</h2>
+              </div>
+              <button type="button" id="cancel-query-btn" class="button outline" hidden>✕ Cancelar</button>
+            </div>
+
+            <form id="explore-form" class="query-bar">
+              <select id="ref-kind" aria-label="Tipo de referência territorial">
+                <option value="MUNICIPALITY">Município (IBGE)</option>
+                <option value="POINT">Ponto (Lon, Lat)</option>
+                <option value="CEP">CEP (Categoria A)</option>
+              </select>
+              <input id="ref-value" type="text" placeholder="Código IBGE 7 dígitos (ex: 4314902 para Porto Alegre)" aria-label="Valor da referência" required>
+              <button type="submit" class="button primary">Investigar</button>
+            </form>
+            <div id="radius-wrap" class="form-field" style="max-width:240px;margin-bottom:12px;" hidden>
+              <label for="ref-radius">Raio opcional (metros)</label>
+              <input id="ref-radius" type="number" min="0" max="50000" value="1000">
+            </div>
+
+            <p id="explore-notice" class="notice-box" role="status" aria-live="polite">Informe um município (ex.: 4314902), ponto ou selecione uma área diretamente no mapa.</p>
+
+            <div class="explore-grid">
+              <div class="map-box">
+                <div class="map-toolbar">
+                  <div>
+                    <button type="button" id="map-zoom-in" class="button outline" title="Ampliar">+</button>
+                    <button type="button" id="map-zoom-out" class="button outline" title="Reduzir">−</button>
+                    <button type="button" id="map-fit" class="button outline">Ajustar</button>
+                    <button type="button" id="map-draw-btn" class="button outline">▢ Selecionar área</button>
+                  </div>
+                  <span class="muted">Visualização local simplificada (WGS84)</span>
+                </div>
+                <svg id="situs-map-svg" role="img" aria-label="Mapa vetorial local do SITUS"></svg>
+                <div class="map-footer">
+                  <div class="scale-bar"><span class="scale-line"></span><span id="map-scale-label">—</span></div>
+                  <div class="map-legend">
+                    <span><i class="legend-swatch" style="background:#1a7dc4;"></i>Urbana</span>
+                    <span><i class="legend-swatch" style="background:#087f8c;"></i>Aglomerado rural</span>
+                    <span><i class="legend-swatch" style="background:#4d9e6b;"></i>Zona rural</span>
+                  </div>
+                  <span>Atribuição: IBGE Censo 2022</span>
+                </div>
+              </div>
+
+              <aside class="inspector-box" id="inspector-content">
+                <span class="badge info">Aguardando consulta</span>
+                <h3>Painel de inspeção</h3>
+                <p class="muted">Os resultados incluem área geodésica em m²/ha, setores intersectados, resolução nativa, método, limitações e proveniência do ambiente de execução.</p>
+              </aside>
+            </div>
+          </section>
+        </div>
+
+        <!-- CAMADAS -->
+        <section id="camadas" data-view="camadas" class="panel" hidden>
+          <span class="eyebrow">INVENTÁRIO LOCAL</span>
+          <h1>Camadas disponíveis</h1>
+          <p class="muted">Somente camadas de Categoria A aprovadas e registradas no catálogo local são listadas.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Camada</th><th>Nível</th><th>CRS nativo</th><th>Versão</th><th>Estado</th></tr></thead>
+              <tbody id="layers-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- FONTES E MÉTODOS -->
+        <section id="fontes" data-view="fontes" class="panel" hidden>
+          <span class="eyebrow">PROVENIÊNCIA CIENTÍFICA E POLÍTICA CATEGORIA A</span>
+          <h1>Fontes e métodos</h1>
+          <p class="muted">Dados publicamente acessíveis não são automaticamente admissíveis. Este sistema rejeita dados pessoais, domiciliares ou cadastrais individualizados.</p>
+          <div id="sources-list"></div>
+        </section>
+
+        <!-- ESTADO DO SISTEMA -->
+        <section id="estado" data-view="estado" class="panel" hidden>
+          <span class="eyebrow">OBSERVABILIDADE LOCAL</span>
+          <h1>Estado do sistema</h1>
+          <p class="muted">Verificação de dependências locais (PostGIS, GDAL/GEOS/PROJ, artefato Wasm). Nenhum dado de consulta é registrado.</p>
+          <pre id="system-status-pre" style="background:#f5f9fc;padding:16px;border-radius:8px;border:1px solid var(--line);overflow:auto;font-size:12px;">Carregando…</pre>
+        </section>
+
+        <!-- CONFIGURAÇÕES -->
+        <section id="configuracoes" data-view="configuracoes" class="panel" hidden>
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">CONTROLE HUMANO E TRANSPARÊNCIA</span>
+              <h1>Configurações</h1>
+            </div>
+          </div>
+          <div class="settings-tabs" role="tablist">
+            <button type="button" class="settings-tab active" role="tab" aria-selected="true" data-tab="processamento">Processamento</button>
+            <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="geral">Geral</button>
+          </div>
+
+          <div data-tab-panel="processamento">
+            <p class="muted">A seleção de ambiente é aplicada por operação portável, respeitando estritamente a política Categoria A e os limites de segurança.</p>
+            <div class="settings-grid">
+              <label class="form-field">
+                Modo de execução
+                <select id="cfg-mode">
+                  <option value="AUTO">AUTO (Padrão conservador)</option>
+                  <option value="PREFER_LOCAL">PREFER_LOCAL (Worker Wasm)</option>
+                  <option value="PREFER_SERVER">PREFER_SERVER (Nativo C++26)</option>
+                  <option value="HYBRID">HYBRID (PostGIS + Worker Wasm)</option>
+                </select>
+                <small>Em AUTO, usa o servidor nativo quando o Worker está frio ou a carga é pequena.</small>
+              </label>
+
+              <label class="form-field">
+                Perfil de recursos
+                <select id="cfg-profile">
+                  <option value="ECONOMY">ECONOMY (até 500 unidades)</option>
+                  <option value="BALANCED">BALANCED (até 2.500 unidades)</option>
+                  <option value="PERFORMANCE">PERFORMANCE (até 10.000 unidades)</option>
+                </select>
+                <small>Limita memória, tamanho de entrada e timeout do Worker.</small>
+              </label>
+            </div>
+
+            <div style="display:grid;gap:8px;margin:12px 0 18px;">
+              <label><input type="checkbox" id="cfg-fallback" checked> Permitir fallback autorizado para o servidor nativo em caso de indisponibilidade ou erro do Wasm</label>
+              <label><input type="checkbox" id="cfg-details" checked> Exibir detalhes de execução e proveniência computacional no painel de inspeção</label>
+            </div>
+
+            <h3>Catálogo de capacidades por operação</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Operação</th><th>Versão</th><th>Política</th><th>Destinos</th></tr></thead>
+                <tbody id="caps-tbody"></tbody>
+              </table>
+            </div>
+
+            <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);">
+              <h3>Diagnóstico comparativo explícito</h3>
+              <p class="muted">Executa a mesma síntese determinística sobre uma fixture pública sintética (50 unidades) no servidor nativo e no Worker Wasm, sem enviar dados de hardware.</p>
+              <button type="button" id="run-diag-btn" class="button outline">Executar comparação (Nativo vs Wasm)</button>
+              <pre id="diag-output" style="margin-top:10px;background:#f5f9fc;padding:12px;border-radius:8px;border:1px solid var(--line);font-size:12px;overflow:auto;">Aguardando ação explícita.</pre>
+            </div>
+          </div>
+
+          <div data-tab-panel="geral" hidden>
+            <p><strong>SITUS · Sistema de Conhecimento Territorial</strong> (v0.2.0)</p>
+            <p class="muted">Licença GPL v3.0 · Ecossistema SisTer · Identidade visual alinhada ao BB-CORE / MORFO.</p>
+          </div>
+        </section>
+
+        <footer>
+          <span>SITUS v0.2.0 · GPL v3.0 · Categoria A estrita</span>
+          <span>Sempre pronto. Sempre incompleto.</span>
+        </footer>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

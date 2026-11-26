@@ -1,0 +1,60 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "SITUS Native Dev (C++26)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "BUILD_TESTING": "ON",
+        "SITUS_BUILD_WASM": "OFF"
+      }
+    },
+    {
+      "name": "test",
+      "displayName": "SITUS Native Test (C++26)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/test",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "SITUS_BUILD_WASM": "OFF"
+      }
+    },
+    {
+      "name": "wasm-dev",
+      "displayName": "SITUS Wasm Dev (Emscripten C++26)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-wasm/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF",
+        "SITUS_BUILD_WASM": "ON"
+      }
+    },
+    {
+      "name": "wasm-test",
+      "displayName": "SITUS Wasm Test (Emscripten C++26)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-wasm/test",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON",
+        "SITUS_BUILD_WASM": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "test", "configurePreset": "test" },
+    { "name": "wasm-dev", "configurePreset": "wasm-dev" },
+    { "name": "wasm-test", "configurePreset": "wasm-test" }
+  ],
+  "testPresets": [
+    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
+    { "name": "test", "configurePreset": "test", "output": { "outputOnFailure": true } },
+    { "name": "wasm-test", "configurePreset": "wasm-test", "output": { "outputOnFailure": true } }
+  ]
+}

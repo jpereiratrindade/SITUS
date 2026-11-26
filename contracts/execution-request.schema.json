@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://situs.local/contracts/execution-request.schema.json",
+  "title": "SITUS Portable Execution Request",
+  "type": "object",
+  "required": ["operation_id", "contract_version", "requested_mode", "inputs"],
+  "properties": {
+    "operation_id": {
+      "type": "string",
+      "enum": ["territorial_area_synthesis"]
+    },
+    "contract_version": { "type": "string" },
+    "requested_mode": {
+      "type": "string",
+      "enum": ["AUTO", "PREFER_LOCAL", "PREFER_SERVER", "HYBRID"]
+    },
+    "profile": {
+      "type": "string",
+      "enum": ["ECONOMY", "BALANCED", "PERFORMANCE"]
+    },
+    "allow_fallback": { "type": "boolean" },
+    "inputs": {
+      "type": "object",
+      "required": ["reference_area_m2", "overlap_rule", "dataset_versions", "slices"],
+      "properties": {
+        "reference_area_m2": { "type": "number", "exclusiveMinimum": 0 },
+        "overlap_rule": {
+          "type": "string",
+          "enum": ["DISJOINT_SECTORS", "ALLOW_OVERLAP_EXPLICIT"]
+        },
+        "dataset_versions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "slices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["unit_code", "group_key", "group_label", "intersected_area_m2", "unit_total_area_m2"],
+            "properties": {
+              "unit_code": { "type": "string" },
+              "group_key": { "type": "string" },
+              "group_label": { "type": "string" },
+              "intersected_area_m2": { "type": "number", "minimum": 0 },
+              "unit_total_area_m2": { "type": "number", "exclusiveMinimum": 0 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

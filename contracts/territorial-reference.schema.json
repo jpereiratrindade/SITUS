@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://situs.local/contracts/territorial-reference.schema.json",
+  "title": "SITUS Territorial Reference Request & Response",
+  "type": "object",
+  "required": ["kind", "value", "crs"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["CEP", "MUNICIPALITY", "POINT", "POLYGON"]
+    },
+    "value": {
+      "description": "String (CEP 8 dígitos ou código IBGE 7 dígitos), [lon, lat] para POINT, ou GeoJSON Polygon/MultiPolygon para POLYGON."
+    },
+    "crs": {
+      "type": "string",
+      "enum": ["EPSG:4326", "OGC:CRS84"]
+    },
+    "radius_m": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 50000
+    }
+  }
+}

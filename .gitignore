@@ -1,0 +1,30 @@
+# Builds e artefatos gerados
+build/
+build-wasm/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.wasm
+web/wasm/*.wasm
+web/wasm/situs_core.js
+
+# Dados, banco, segredos e estado local
+var/
+data/
+.env
+.env.local
+*.gpkg
+*.tif
+*.tiff
+*.shp
+*.dbf
+*.shx
+*.prj
+*.sqlite3
+*.log
+
+# Ferramentas locais / IDE
+.vscode/
+.idea/
+compile_commands.json

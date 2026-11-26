@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://situs.local/contracts/observation.schema.json",
+  "title": "SITUS Territorial Observation",
+  "type": "object",
+  "required": [
+    "indicator_id",
+    "unit",
+    "status",
+    "source_id",
+    "dataset_version",
+    "method",
+    "support",
+    "limitations"
+  ],
+  "properties": {
+    "indicator_id": { "type": "string" },
+    "value": { "type": ["number", "string", "object", "null"] },
+    "unit": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["AVAILABLE", "NO_DATA", "SUPPRESSED", "NOT_APPLICABLE"]
+    },
+    "source_id": { "type": "string" },
+    "dataset_version": { "type": "string" },
+    "reference_date": { "type": ["string", "null"] },
+    "native_resolution": { "type": "string" },
+    "method": { "type": "string" },
+    "support": { "type": "string" },
+    "coverage_fraction": { "type": ["number", "null"] },
+    "limitations": { "type": "string" },
+    "uncertainty": { "type": ["string", "null"] }
+  }
+}

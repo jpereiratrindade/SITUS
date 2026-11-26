@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://situs.local/contracts/execution-capabilities.schema.json",
+  "title": "SITUS Execution Capabilities Catalog",
+  "type": "object",
+  "required": ["contract_version", "default_mode", "default_profile", "operations"],
+  "properties": {
+    "contract_version": { "type": "string" },
+    "default_mode": { "type": "string" },
+    "default_profile": { "type": "string" },
+    "wasm_artifact": {
+      "type": "object",
+      "required": ["available", "sha256", "version"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "sha256": { "type": ["string", "null"] },
+        "version": { "type": ["string", "null"] }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  }
+}

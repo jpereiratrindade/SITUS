@@ -1,0 +1,65 @@
+{
+  "contract_version": "0.2.0",
+  "default_mode": "AUTO",
+  "default_profile": "BALANCED",
+  "allow_fallback": true,
+  "show_execution_details": true,
+  "profiles": {
+    "ECONOMY": {
+      "max_input_bytes": 262144,
+      "max_units": 500,
+      "max_vertices": 50000,
+      "timeout_ms": 3000
+    },
+    "BALANCED": {
+      "max_input_bytes": 1048576,
+      "max_units": 2500,
+      "max_vertices": 250000,
+      "timeout_ms": 8000
+    },
+    "PERFORMANCE": {
+      "max_input_bytes": 4194304,
+      "max_units": 10000,
+      "max_vertices": 1000000,
+      "timeout_ms": 20000
+    }
+  },
+  "operations": [
+    {
+      "operation_id": "territorial_area_synthesis",
+      "title": "Síntese de áreas e proporções por unidade territorial",
+      "algorithm_version": "0.2.0",
+      "contract_version": "0.2.0",
+      "policy_constraint": "ADAPTIVE_ALLOWED",
+      "supported_targets": ["NATIVE_SERVER", "BROWSER_WASM", "HYBRID"],
+      "auto_rule": {
+        "prefer_server_when_units_below": 25,
+        "prefer_local_when_worker_warm_and_units_at_least": 25,
+        "fallback_to_native_server": true
+      },
+      "tolerances": {
+        "area_m2_abs": 1e-2,
+        "fraction_abs": 1e-6
+      },
+      "notes": "No fluxo híbrido ou local, o PostGIS realiza a interseção geométrica oficial e o núcleo C++26 executa a síntese determinística de áreas e proporções."
+    },
+    {
+      "operation_id": "territorial_intersect",
+      "title": "Interseção geométrica de polígonos e cálculo geodésico de área",
+      "algorithm_version": "0.2.0",
+      "contract_version": "0.2.0",
+      "policy_constraint": "SERVER_ONLY",
+      "supported_targets": ["NATIVE_SERVER"],
+      "notes": "Execução exclusiva no servidor nativo via PostGIS/GEOS para preservar integridade topológica e cadeia geodésica completa."
+    },
+    {
+      "operation_id": "environmental_raster_composition",
+      "title": "Composição ambiental raster (cobertura/uso 30m)",
+      "algorithm_version": "0.2.0",
+      "contract_version": "0.2.0",
+      "policy_constraint": "SERVER_ONLY",
+      "supported_targets": ["NATIVE_SERVER"],
+      "notes": "Execução exclusiva no servidor nativo via GDAL sobre GeoTIFF local aprovado."
+    }
+  ]
+}

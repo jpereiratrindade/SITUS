@@ -1,0 +1,88 @@
+openapi: 3.1.0
+info:
+  title: SITUS API
+  version: 0.2.0
+  description: >
+    Sistema de Conhecimento Territorial (Categoria A estrita).
+    Todas as consultas são efêmeras, locais e sem persistência de localização do usuário.
+  license:
+    name: GPL-3.0-or-later
+servers:
+  - url: http://127.0.0.1:8096
+paths:
+  /health:
+    get:
+      summary: Saúde do processo e dependências locais
+      responses:
+        "200":
+          description: Processo saudável
+  /api/v1/catalog:
+    get:
+      summary: Catálogo de fontes e camadas aprovadas
+      responses:
+        "200":
+          description: Catálogo atual
+  /api/v1/references/resolve:
+    post:
+      summary: Resolver referência territorial efêmera (MUNICIPALITY, POINT, POLYGON, CEP)
+      responses:
+        "200":
+          description: Resolução territorial
+        "400":
+          description: Payload inválido
+        "422":
+          description: Geometria inválida, CRS desconhecido ou fora dos limites
+  /api/v1/territories/intersect:
+    post:
+      summary: Interseção espacial e áreas geodésicas de unidades territoriais
+      responses:
+        "200":
+          description: Unidades territoriais intersectadas
+        "400":
+          description: Payload inválido
+        "422":
+          description: Referência inválida ou fora da cobertura
+  /api/v1/territories/characterize:
+    post:
+      summary: Observações territoriais e ambientais disponíveis com proveniência
+      responses:
+        "200":
+          description: Observações territoriais
+        "400":
+          description: Payload inválido
+        "422":
+          description: Referência inválida
+  /api/v1/map/features:
+    post:
+      summary: Geometrias públicas recortadas e simplificadas para visualização local
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection simplificado
+        "400":
+          description: Payload inválido
+  /api/v1/execution/capabilities:
+    get:
+      summary: Catálogo de operações portáveis, destinos, limites e estado do artefato Wasm
+      responses:
+        "200":
+          description: Capacidades de execução
+  /api/v1/execution/inputs:
+    post:
+      summary: Entradas analíticas mínimas e completas para operação portável aprovada
+      responses:
+        "200":
+          description: Entradas completas com proveniência e limites
+        "400":
+          description: Payload inválido
+        "422":
+          description: Operação não suportada ou limites excedidos
+  /api/v1/execution/run:
+    post:
+      summary: Execução nativa de operação portável permitida
+      responses:
+        "200":
+          description: Resultado com proveniência computacional
+        "400":
+          description: Payload inválido
+        "422":
+          description: Operação ou entrada rejeitada

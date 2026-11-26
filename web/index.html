@@ -105,11 +105,11 @@
 
             <form id="explore-form" class="query-bar">
               <select id="ref-kind" aria-label="Tipo de referência territorial">
-                <option value="MUNICIPALITY">Município (IBGE)</option>
+                <option value="MUNICIPALITY" selected>Município (IBGE)</option>
                 <option value="POINT">Ponto (Lon, Lat)</option>
-                <option value="CEP">CEP (Categoria A)</option>
+                <option value="CEP">CEP (pendente de fonte)</option>
               </select>
-              <input id="ref-value" type="text" placeholder="Código IBGE 7 dígitos (ex: 4314902 para Porto Alegre)" aria-label="Valor da referência" required>
+              <input id="ref-value" type="text" placeholder="Código IBGE 7 dígitos (ex: 4314902 Porto Alegre, 4301602 Bagé)" aria-label="Valor da referência" required>
               <button type="submit" class="button primary">Investigar</button>
             </form>
             <div id="radius-wrap" class="form-field" style="max-width:240px;margin-bottom:12px;" hidden>

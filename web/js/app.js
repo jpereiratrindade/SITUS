@@ -169,7 +169,23 @@
                     <h3>Referência não resolvida para análise local</h3>
                     <p>${(refData.reasons || []).map(escapeHtml).join(' ')}</p>
                     <p class="muted">O sistema explicita quando não dispõe de fonte aprovada ou cobertura territorial.</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;">
+                        <button type="button" class="button primary" id="fallback-draw-area">▢ Selecionar área no mapa</button>
+                        <button type="button" class="button outline" id="fallback-use-mun">Buscar por Município (IBGE)</button>
+                    </div>
                 `;
+                document.getElementById('fallback-draw-area')?.addEventListener('click', () => {
+                    document.getElementById('map-draw-btn')?.click();
+                    notice.textContent = 'Arraste sobre o mapa para desenhar uma área retangular de investigação.';
+                });
+                document.getElementById('fallback-use-mun')?.addEventListener('click', () => {
+                    const kindEl = document.getElementById('ref-kind');
+                    const valEl = document.getElementById('ref-value');
+                    kindEl.value = 'MUNICIPALITY';
+                    kindEl.dispatchEvent(new Event('change'));
+                    valEl.value = '';
+                    valEl.focus();
+                });
                 notice.textContent = 'Consulta concluída (sem cobertura ou fonte indisponível).';
                 return;
             }

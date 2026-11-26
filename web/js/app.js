@@ -341,13 +341,29 @@
               `).join('') + `</tbody></table>`
             : '';
 
-        const obsHtml = obsList.map(o => `
-            <article class="obs-card ${o.status === 'NO_DATA' ? 'nodata' : ''}">
-                <h4>${escapeHtml(o.indicator_id)} <span class="badge ${o.status === 'AVAILABLE' ? '' : 'warn'}">${escapeHtml(o.status)}</span></h4>
-                <p class="muted">Fonte: ${escapeHtml(o.source_id)} · Resolução: ${escapeHtml(o.native_resolution)} · Método: ${escapeHtml(o.method)}</p>
-                <p class="muted">${escapeHtml(o.limitations)}</p>
-            </article>
-        `).join('');
+        const obsHtml = obsList.map(o => {
+            let extraHtml = '';
+            if (o.indicator_id === 'land_cover_composition' && o.status === 'AVAILABLE' && o.value && Array.isArray(o.value.classes)) {
+                extraHtml = `<table><thead><tr><th>Classe (MapBiomas 2023)</th><th>Pixels</th><th>Área</th><th>% pixels</th></tr></thead><tbody>` +
+                    o.value.classes.map(c => `
+                        <tr>
+                            <td>${escapeHtml(c.class_label)}</td>
+                            <td>${Number(c.pixel_count).toLocaleString('pt-BR')}</td>
+                            <td>${fmtAreaHa(c.area_m2)}</td>
+                            <td>${(c.pixel_fraction * 100).toFixed(1)}%</td>
+                        </tr>
+                    `).join('') +
+                    `</tbody></table><p class="muted" style="margin-top:6px;">Cobertura válida do raster: ${(o.coverage_fraction * 100).toFixed(1)}% (${Number(o.value.valid_pixels).toLocaleString('pt-BR')} pixels válidos, ${Number(o.value.nodata_pixels).toLocaleString('pt-BR')} NoData)</p>`;
+            }
+            return `
+                <article class="obs-card ${o.status === 'NO_DATA' ? 'nodata' : ''}">
+                    <h4>${escapeHtml(o.indicator_id)} <span class="badge ${o.status === 'AVAILABLE' ? '' : 'warn'}">${escapeHtml(o.status)}</span></h4>
+                    <p class="muted">Fonte: ${escapeHtml(o.source_id)} · Resolução: ${escapeHtml(o.native_resolution)} · Método: ${escapeHtml(o.method)}</p>
+                    ${extraHtml}
+                    <p class="muted">${escapeHtml(o.limitations)}</p>
+                </article>
+            `;
+        }).join('');
 
         el.innerHTML = `
             <div class="section-heading" style="margin-bottom:8px;">

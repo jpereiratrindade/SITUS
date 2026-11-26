@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <expected>
 #include <nlohmann/json.hpp>
 #include <string>
 
@@ -15,15 +14,14 @@ struct RasterConfig {
     std::string source_id = "mapbiomas_cobertura_30m_rs";
     std::string dataset_version = "PENDING";
     std::string native_resolution = "30 m";
+    std::string reference_date = "2023-01-01";
     bool approved = false;
 };
 
-[[nodiscard]] nlohmann::json characterize_raster_over_bbox(
+[[nodiscard]] nlohmann::json characterize_raster_over_geometry(
     const RasterConfig& cfg,
-    double min_lon,
-    double min_lat,
-    double max_lon,
-    double max_lat
+    const nlohmann::json& geojson_geom_4326,
+    double reference_area_m2
 );
 
 } // namespace situs::spatial

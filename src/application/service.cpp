@@ -92,7 +92,18 @@ std::expected<nlohmann::json, std::string> SitusService::characterize_territorie
         observations.push_back(std::move(synth_obs));
     }
 
-    auto raster_obs = spatial::characterize_raster_over_bbox(cfg_.raster, 0.0, 0.0, 0.0, 0.0);
+    nlohmann::json effective_geom = nullptr;
+    if (req.value("kind", "") == "POLYGON" && req.contains("value")) {
+        effective_geom = req["value"];
+    } else {
+        auto resolved = store_.resolve_reference(req, cfg_.limits);
+        if (resolved && resolved->contains("analysis_geometry") && !(*resolved)["analysis_geometry"].is_null()) {
+            effective_geom = (*resolved)["analysis_geometry"];
+        }
+    }
+
+    const double ref_area_m2 = inter->value("reference_area_m2", 0.0);
+    auto raster_obs = spatial::characterize_raster_over_geometry(cfg_.raster, effective_geom, ref_area_m2);
     observations.push_back(std::move(raster_obs));
 
     return nlohmann::json{

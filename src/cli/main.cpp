@@ -64,6 +64,13 @@ situs::application::AppConfig load_config(bool admin_mode) {
 
     cfg.db_conninfo = "host=" + db_host + " port=" + db_port + " dbname=" + db_name +
                       " user=" + db_user + " password=" + db_pass;
+
+    cfg.raster.geotiff_path = env_or("SITUS_RASTER_PATH", "");
+    cfg.raster.approved = env_or("SITUS_RASTER_APPROVED", "0") == "1";
+    cfg.raster.source_id = env_or("SITUS_RASTER_SOURCE_ID", "mapbiomas_campos_rs_2023");
+    cfg.raster.dataset_version = env_or("SITUS_RASTER_VERSION", "2023.col9");
+    cfg.raster.native_resolution = "30 m (EPSG:32722, 900 m2/pixel)";
+    cfg.raster.reference_date = "2023-01-01";
     return cfg;
 }
 

@@ -667,7 +667,9 @@
                 window.SitusMap.clearSelection();
             });
             document.getElementById('investigate-selected-sector')?.addEventListener('click', () => {
-                if (feat.geometry) {
+                if (p.unit_code) {
+                    runInvestigation({ kind: 'SECTOR', value: p.unit_code, crs: 'EPSG:4326' });
+                } else if (feat.geometry) {
                     runInvestigation({ kind: 'POLYGON', value: feat.geometry, crs: 'EPSG:4326' });
                 }
             });

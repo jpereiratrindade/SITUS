@@ -268,6 +268,21 @@ std::expected<GeomQuery, std::string> build_reference_geom_query(
         };
     }
 
+    if (kind == "SECTOR") {
+        if (!req["value"].is_string()) {
+            return std::unexpected("value para SECTOR deve ser string (codigo do setor IBGE)");
+        }
+        const std::string unit_code = req["value"].get<std::string>();
+        if (unit_code.empty() || unit_code.size() > 32) {
+            return std::unexpected("Codigo de setor invalido");
+        }
+        return GeomQuery{
+            "(SELECT geom FROM territorial_unit tu JOIN dataset_version dv ON dv.version_id = tu.version_id WHERE dv.is_active = TRUE AND tu.unit_code = $1 LIMIT 1)",
+            {unit_code},
+            "Geometria exata do setor censitario IBGE 2022 " + unit_code
+        };
+    }
+
     if (kind == "DISTRICT") {
         auto matches = lookup_districts(conn, req);
         if (!matches) return std::unexpected(matches.error());
@@ -537,6 +552,52 @@ PostgisStore::resolve_reference(const nlohmann::json& req, const domain::Securit
         return std::unexpected("Payload deve ser objeto JSON");
     }
     const std::string kind = req.value("kind", "");
+
+    if (kind == "SECTOR") {
+        if (!req.contains("value") || !req["value"].is_string()) {
+            return std::unexpected("value para SECTOR deve ser string (codigo do setor IBGE)");
+        }
+        const std::string unit_code = req["value"].get<std::string>();
+        auto conn = connect_pg(conninfo_);
+        if (!conn) return std::unexpected(conn.error());
+        auto res = exec_params(
+            conn->get(),
+            "SELECT tu.unit_code, tu.municipality_code, tu.municipality_name, "
+            "COALESCE(tu.district_name, ''), COALESCE(tu.situation_label, ''), "
+            "tu.area_m2, ST_AsGeoJSON(ST_SimplifyPreserveTopology(tu.geom, 0.00025)), "
+            "ST_AsGeoJSON(tu.geom) "
+            "FROM territorial_unit tu "
+            "JOIN dataset_version dv ON dv.version_id = tu.version_id "
+            "WHERE dv.is_active = TRUE AND tu.unit_code = $1 LIMIT 1",
+            {unit_code}
+        );
+        if (!res) return std::unexpected(res.error());
+        if (PQntuples(res->get()) == 0) {
+            return nlohmann::json{
+                {"status", "OUTSIDE_COVERAGE"},
+                {"kind", "SECTOR"},
+                {"spatial_level", "SETOR_CENSITARIO"},
+                {"support_geometry", nullptr},
+                {"analysis_geometry", nullptr},
+                {"reasons", nlohmann::json::array({"Setor censitario nao encontrado na cobertura ativa"})}
+            };
+        }
+        return nlohmann::json{
+            {"status", "RESOLVED"},
+            {"kind", "SECTOR"},
+            {"spatial_level", "SETOR_CENSITARIO"},
+            {"method", "ibge_2022_exact_sector_geometry"},
+            {"unit_code", PQgetvalue(res->get(), 0, 0)},
+            {"municipality_code", PQgetvalue(res->get(), 0, 1)},
+            {"municipality_name", PQgetvalue(res->get(), 0, 2)},
+            {"district_name", PQgetvalue(res->get(), 0, 3)},
+            {"situation_label", PQgetvalue(res->get(), 0, 4)},
+            {"area_m2", std::strtod(PQgetvalue(res->get(), 0, 5), nullptr)},
+            {"support_geometry", nlohmann::json::parse(PQgetvalue(res->get(), 0, 6))},
+            {"analysis_geometry", nlohmann::json::parse(PQgetvalue(res->get(), 0, 7))},
+            {"reasons", nlohmann::json::array({"Geometria oficial exata do setor censitario IBGE 2022 (sem simplificacao de borda)."})}
+        };
+    }
 
     if (kind == "DISTRICT") {
         auto conn = connect_pg(conninfo_);

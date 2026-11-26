@@ -116,17 +116,17 @@ h2 { font-size: 20px; line-height: 1.3; }
 p { margin: 0 0 12px; }
 .muted { color: var(--muted); font-size: 13px; }
 
-.explore-grid { display: grid; grid-template-columns: minmax(300px, 1.35fr) minmax(300px, 1fr); gap: 20px; align-items: start; }
-.query-bar { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; gap: 10px; margin-bottom: 14px; }
+.explore-grid { display: grid; grid-template-columns: minmax(420px, 1.8fr) minmax(320px, 420px); gap: 20px; align-items: start; }
+.query-bar { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; gap: 10px; margin-bottom: 14px; }
 .query-bar select, .query-bar input, .form-field select, .form-field input {
   border: 1px solid #cedce6; background: #f9fbfd; border-radius: 8px; padding: 9px 12px; color: var(--ink); min-width: 0;
 }
 
 .map-box {
   position: relative; border: 1px solid var(--line); border-radius: 10px;
-  background: #f5f9fc; overflow: hidden; min-height: 440px;
+  background: #f5f9fc; overflow: hidden; min-height: 580px;
 }
-#situs-map-svg { display: block; width: 100%; height: 440px; cursor: grab; user-select: none; }
+#situs-map-svg { display: block; width: 100%; height: 580px; cursor: grab; user-select: none; }
 #situs-map-svg.drawing { cursor: crosshair; }
 .map-toolbar {
   display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;

@@ -123,7 +123,7 @@ window.SitusMap = (() => {
         const el = svg();
         if (!el) return;
         const w = el.clientWidth || 720;
-        const h = 440;
+        const h = el.clientHeight || 580;
         el.setAttribute('viewBox', `0 0 ${w} ${h}`);
 
         let html = `<rect width="${w}" height="${h}" fill="#f5f9fc"/>`;
@@ -192,7 +192,7 @@ window.SitusMap = (() => {
         window.addEventListener('mouseup', (ev) => {
             const rect = el.getBoundingClientRect();
             const w = el.clientWidth || 720;
-            const h = 440;
+            const h = el.clientHeight || 580;
             if (drawMode && dragStart) {
                 const px2 = ev.clientX - rect.left;
                 const py2 = ev.clientY - rect.top;
@@ -230,7 +230,7 @@ window.SitusMap = (() => {
             const dx = ev.clientX - rect.left - panStart.px;
             const dy = ev.clientY - rect.top - panStart.py;
             const w = el.clientWidth || 720;
-            const h = 440;
+            const h = el.clientHeight || 580;
             const spanLon = panStart.bbox.maxLon - panStart.bbox.minLon;
             const spanLat = panStart.bbox.maxLat - panStart.bbox.minLat;
             const dLon = -(dx / w) * spanLon;

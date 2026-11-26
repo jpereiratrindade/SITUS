@@ -293,7 +293,10 @@
             const mapData = await mapRes.json();
             if (!charRes.ok) throw new Error((charData.error && charData.error.message) || 'Erro na caracterização');
 
-            window.SitusMap.setData(mapData, refData.analysis_geometry || refData.support_geometry);
+            const refOverlay = reference.kind === 'MUNICIPALITY'
+                ? null
+                : (refData.analysis_geometry || refData.support_geometry);
+            window.SitusMap.setData(mapData, refOverlay);
 
             // 3. Executar síntese adaptativa (Nativo / Worker Wasm / Híbrido)
             let execEnvelope = null;

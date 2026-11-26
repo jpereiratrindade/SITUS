@@ -190,12 +190,12 @@
                 return;
             }
 
-            // 2. Caracterização territorial nativa + feições do mapa + síntese adaptativa (se aplicável)
+            // 2. Caracterização territorial (sem síntese duplicada no servidor) + feições do mapa
             const [charRes, mapRes] = await Promise.all([
                 fetch('/api/v1/territories/characterize', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(reference),
+                    body: JSON.stringify({ ...reference, skip_synthesis: true }),
                     signal
                 }),
                 fetch('/api/v1/map/features', {

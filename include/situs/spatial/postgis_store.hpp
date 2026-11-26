@@ -20,6 +20,7 @@ struct IngestReport {
     std::size_t read_features = 0;
     std::size_t valid_features = 0;
     std::size_t inserted_features = 0;
+    std::size_t merged_multipart_features = 0;
     std::size_t skipped_invalid = 0;
     bool already_ingested = false;
 };

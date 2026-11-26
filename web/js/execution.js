@@ -103,17 +103,20 @@ window.SitusExecution = (() => {
             };
         }
 
-        // Modo AUTO conservador (seção 5.2)
-        if (wasmReady && state.workerWarm && withinLimits && unitCount >= 25) {
+        // Modo AUTO: seleciona HYBRID (PostGIS + Worker Wasm) para cargas >= 25 unidades dentro dos limites;
+        // cargas pequenas permanecem no servidor nativo sem iniciar Wasm desnecessariamente.
+        if (wasmReady && withinLimits && unitCount >= 25) {
             return {
                 target: 'HYBRID',
-                reason: 'AUTO_HYBRID_WARM_WORKER: Worker Wasm aquecido e volume >= 25 unidades dentro dos limites'
+                reason: state.workerWarm
+                    ? 'AUTO_HYBRID_WARM_WORKER: Worker Wasm aquecido e volume >= 25 unidades'
+                    : 'AUTO_HYBRID_BY_VOLUME: Volume >= 25 unidades elegivel para sintese local em Worker Wasm'
             };
         }
         return {
             target: 'NATIVE_SERVER',
             reason: wasmReady
-                ? 'AUTO_SERVER_CONSERVATIVE: Execucao nativa de referencia (carga pequena ou worker frio)'
+                ? 'AUTO_SERVER_SMALL_LOAD: Carga < 25 unidades (evita inicializacao Wasm)'
                 : 'AUTO_SERVER_NO_WASM: Execucao nativa de referencia (Wasm indisponivel)'
         };
     }

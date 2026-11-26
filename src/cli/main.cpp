@@ -192,6 +192,7 @@ int main(int argc, char** argv) {
             {"read_features", rep->read_features},
             {"valid_features", rep->valid_features},
             {"inserted_features", rep->inserted_features},
+            {"merged_multipart_features", rep->merged_multipart_features},
             {"skipped_invalid", rep->skipped_invalid},
             {"already_ingested", rep->already_ingested}
         };

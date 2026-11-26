@@ -43,51 +43,58 @@ std::expected<nlohmann::json, std::string> SitusService::characterize_territorie
     auto inter = store_.intersect_territories(req, cfg_.limits);
     if (!inter) return std::unexpected(inter.error());
 
-    auto synth_inputs = store_.build_synthesis_inputs(req, cfg_.limits);
-    nlohmann::json synth_obs;
-    if (synth_inputs) {
-        nlohmann::json run_req = {
-            {"operation_id", "territorial_area_synthesis"},
-            {"contract_version", "0.2.0"},
-            {"requested_mode", "PREFER_SERVER"},
-            {"inputs", (*synth_inputs)["inputs"]}
-        };
-        auto exec_res = execution::run_native_synthesis(run_req);
-        synth_obs = {
-            {"indicator_id", "territorial_situation_synthesis"},
-            {"value", exec_res["output"]},
-            {"unit", "m2_and_proportion"},
-            {"status", exec_res["status"] == "COMPLETED" ? "AVAILABLE" : "NO_DATA"},
-            {"source_id", "ibge_setores_rs_2022"},
-            {"dataset_version", (*inter)["dataset_versions"]},
-            {"native_resolution", "Escala cadastral censitaria IBGE 2022 (poligonal)"},
-            {"method", "postgis_st_intersection_plus_situs_core_synthesis"},
-            {"support", "setores_censitarios_intersectados"},
-            {"coverage_fraction", (*inter)["coverage_fraction"]},
-            {"limitations", "Sintese territorial exclusivamente geometrica (Categoria A). Nao representa populacao ou domicilios."}
-        };
-    } else {
-        synth_obs = {
-            {"indicator_id", "territorial_situation_synthesis"},
-            {"value", nullptr},
-            {"unit", "m2_and_proportion"},
-            {"status", "NO_DATA"},
-            {"source_id", "ibge_setores_rs_2022"},
-            {"dataset_version", nullptr},
-            {"native_resolution", "Escala cadastral censitaria IBGE 2022 (poligonal)"},
-            {"method", "postgis_st_intersection_plus_situs_core_synthesis"},
-            {"support", "area_solicitada"},
-            {"coverage_fraction", 0.0},
-            {"limitations", synth_inputs.error()}
-        };
+    const bool skip_synthesis = req.value("skip_synthesis", false);
+    nlohmann::json observations = nlohmann::json::array();
+
+    if (!skip_synthesis) {
+        auto synth_inputs = store_.build_synthesis_inputs(req, cfg_.limits);
+        nlohmann::json synth_obs;
+        if (synth_inputs) {
+            nlohmann::json run_req = {
+                {"operation_id", "territorial_area_synthesis"},
+                {"contract_version", "0.2.0"},
+                {"requested_mode", "PREFER_SERVER"},
+                {"inputs", (*synth_inputs)["inputs"]}
+            };
+            auto exec_res = execution::run_native_synthesis(run_req);
+            synth_obs = {
+                {"indicator_id", "territorial_situation_synthesis"},
+                {"value", exec_res["output"]},
+                {"unit", "m2_and_proportion"},
+                {"status", exec_res["status"] == "COMPLETED" ? "AVAILABLE" : "NO_DATA"},
+                {"source_id", "ibge_setores_rs_2022"},
+                {"dataset_version", (*inter)["dataset_versions"]},
+                {"native_resolution", "Escala cadastral censitaria IBGE 2022 (poligonal)"},
+                {"method", "postgis_st_intersection_plus_situs_core_synthesis"},
+                {"support", "setores_censitarios_intersectados"},
+                {"coverage_fraction", (*inter)["coverage_fraction"]},
+                {"limitations", "Sintese territorial exclusivamente geometrica (Categoria A). Nao representa populacao ou domicilios."}
+            };
+        } else {
+            synth_obs = {
+                {"indicator_id", "territorial_situation_synthesis"},
+                {"value", nullptr},
+                {"unit", "m2_and_proportion"},
+                {"status", "NO_DATA"},
+                {"source_id", "ibge_setores_rs_2022"},
+                {"dataset_version", nullptr},
+                {"native_resolution", "Escala cadastral censitaria IBGE 2022 (poligonal)"},
+                {"method", "postgis_st_intersection_plus_situs_core_synthesis"},
+                {"support", "area_solicitada"},
+                {"coverage_fraction", 0.0},
+                {"limitations", synth_inputs.error()}
+            };
+        }
+        observations.push_back(std::move(synth_obs));
     }
 
     auto raster_obs = spatial::characterize_raster_over_bbox(cfg_.raster, 0.0, 0.0, 0.0, 0.0);
+    observations.push_back(std::move(raster_obs));
 
     return nlohmann::json{
         {"status", (*inter)["status"]},
         {"intersection", *inter},
-        {"observations", nlohmann::json::array({synth_obs, raster_obs})}
+        {"observations", observations}
     };
 }
 

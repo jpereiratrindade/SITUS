@@ -683,7 +683,7 @@ PostgisStore::ingest_gpkg(
 
     const std::set<std::string> allowed_set(source_meta.allowed_fields.begin(), source_meta.allowed_fields.end());
 
-    // Preparar statement para inserção rápida
+    // Preparar statement para inserção rápida com união explícita de setores multiparte (mesmo CD_SETOR)
     PGresult* prep = PQprepare(
         conn->get(),
         "ins_tu",
@@ -693,7 +693,10 @@ PostgisStore::ingest_gpkg(
         "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, "
         "ST_Multi(ST_SetSRID(ST_GeomFromWKB(decode($12, 'hex')), 4326)), "
         "ST_Area(ST_SetSRID(ST_GeomFromWKB(decode($12, 'hex')), 4326)::geography)) "
-        "ON CONFLICT (version_id, unit_code) DO NOTHING",
+        "ON CONFLICT (version_id, unit_code) DO UPDATE SET "
+        "geom = ST_Multi(ST_Union(territorial_unit.geom, EXCLUDED.geom)), "
+        "area_m2 = ST_Area(ST_Union(territorial_unit.geom, EXCLUDED.geom)::geography) "
+        "RETURNING (xmax = 0) AS inserted_new",
         12,
         nullptr
     );
@@ -799,12 +802,13 @@ PostgisStore::ingest_gpkg(
         };
 
         PgResPtr ins(PQexecPrepared(conn->get(), "ins_tu", 12, pvals.data(), nullptr, nullptr, 0));
-        if (!ins || PQresultStatus(ins.get()) != PGRES_COMMAND_OK) {
+        if (!ins || PQresultStatus(ins.get()) != PGRES_TUPLES_OK) {
             return rollback_with(std::string("Erro ao inserir setor ") + unit_code_clean + ": " + PQerrorMessage(conn->get()));
         }
-        const char* cmd_tuples = PQcmdTuples(ins.get());
-        if (cmd_tuples && std::strtoll(cmd_tuples, nullptr, 10) > 0) {
+        if (PQntuples(ins.get()) > 0 && std::string(PQgetvalue(ins.get(), 0, 0)) == "t") {
             report.inserted_features++;
+        } else {
+            report.merged_multipart_features++;
         }
     }
 

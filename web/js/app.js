@@ -190,6 +190,69 @@
                 return;
             }
 
+            if (refData.status === 'AMBIGUOUS' && refData.kind === 'CEP') {
+                window.SitusMap.setData({ features: [] }, null);
+                const matchesHtml = (refData.matches || []).map(m => `
+                    <article class="obs-card nodata">
+                        <h4>${escapeHtml(m.resolution_level)} · ${escapeHtml(m.municipality_name)} (${escapeHtml(m.municipality_code)})</h4>
+                        <p>${escapeHtml(m.reference_name || m.reference_kind)} · Fonte: ${escapeHtml(m.source_id)} (${escapeHtml(m.license)})</p>
+                        <button type="button" class="button outline pick-mun-btn" data-mun="${escapeHtml(m.municipality_code)}">Explorar ${escapeHtml(m.municipality_name)}</button>
+                    </article>
+                `).join('');
+                inspector.innerHTML = `
+                    <span class="badge warn">AMBIGUOUS</span>
+                    <h3>CEP ${escapeHtml(refData.cep_code)} com múltiplas correspondências</h3>
+                    <p>${(refData.reasons || []).map(escapeHtml).join(' ')}</p>
+                    ${matchesHtml}
+                `;
+                inspector.querySelectorAll('.pick-mun-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        runInvestigation({ kind: 'MUNICIPALITY', value: btn.dataset.mun, crs: 'EPSG:4326' });
+                    });
+                });
+                notice.textContent = 'CEP ambíguo entre municípios; selecione o contexto desejado.';
+                return;
+            }
+
+            if (refData.kind === 'CEP' && refData.status === 'RESOLVED') {
+                const munCode = refData.municipality_code;
+                const mapRes = await fetch('/api/v1/map/features', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kind: 'MUNICIPALITY', value: munCode, crs: 'EPSG:4326' }),
+                    signal
+                });
+                const mapData = await mapRes.json();
+                window.SitusMap.setData(mapData, refData.support_geometry || refData.analysis_geometry);
+
+                const matchesHtml = (refData.matches || []).map(m => `
+                    <article class="obs-card">
+                        <h4>${escapeHtml(m.resolution_level)} · ${escapeHtml(m.reference_name || m.reference_kind)}</h4>
+                        <p class="muted">Fonte: ${escapeHtml(m.source_id)} · Licença: ${escapeHtml(m.license)}</p>
+                        <p class="muted">${escapeHtml(m.limitations)}</p>
+                    </article>
+                `).join('');
+
+                inspector.innerHTML = `
+                    <span class="badge">${escapeHtml(refData.resolution_level)} · RESOLVED</span>
+                    <h3>CEP ${escapeHtml(refData.cep_code)} → ${escapeHtml(refData.municipality_name)}</h3>
+                    <p>${(refData.reasons || []).map(escapeHtml).join(' ')}</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;">
+                        <button type="button" class="button primary" id="cep-investigate-mun">Investigar setores de ${escapeHtml(refData.municipality_name)}</button>
+                        <button type="button" class="button outline" id="cep-draw-area">▢ Selecionar área menor</button>
+                    </div>
+                    ${matchesHtml}
+                `;
+                document.getElementById('cep-investigate-mun')?.addEventListener('click', () => {
+                    runInvestigation({ kind: 'MUNICIPALITY', value: munCode, crs: 'EPSG:4326' });
+                });
+                document.getElementById('cep-draw-area')?.addEventListener('click', () => {
+                    document.getElementById('map-draw-btn')?.click();
+                });
+                notice.textContent = `CEP resolvido em ${refData.resolution_level} (${refData.municipality_name}).`;
+                return;
+            }
+
             // 2. Caracterização territorial (sem síntese duplicada no servidor) + feições do mapa
             const [charRes, mapRes] = await Promise.all([
                 fetch('/api/v1/territories/characterize', {
@@ -368,9 +431,32 @@
             const inp = document.getElementById('ref-value');
             const radWrap = document.getElementById('radius-wrap');
             radWrap.hidden = k !== 'POINT';
-            if (k === 'MUNICIPALITY') inp.placeholder = 'Código IBGE 7 dígitos (ex: 4314902 para Porto Alegre)';
-            else if (k === 'POINT') inp.placeholder = 'longitude, latitude (ex: -51.23, -30.03)';
-            else if (k === 'CEP') inp.placeholder = 'CEP 8 dígitos (ex: 90010-150)';
+            if (k === 'MUNICIPALITY') {
+                inp.setAttribute('list', 'municipality-datalist');
+                inp.placeholder = 'Nome do município ou código IBGE (ex: Bagé, Porto Alegre, 4314902)';
+            } else {
+                inp.removeAttribute('list');
+                if (k === 'POINT') inp.placeholder = 'longitude, latitude (ex: -51.23, -30.03)';
+                else if (k === 'CEP') inp.placeholder = 'CEP 8 dígitos (ex: 96540-000 Agudo, 90240-552 Porto Alegre)';
+            }
+        });
+
+        let munTimer = null;
+        document.getElementById('ref-value')?.addEventListener('input', (ev) => {
+            if (document.getElementById('ref-kind').value !== 'MUNICIPALITY') return;
+            const q = ev.target.value.trim();
+            clearTimeout(munTimer);
+            munTimer = setTimeout(async () => {
+                try {
+                    const res = await fetch('/api/v1/municipalities?q=' + encodeURIComponent(q));
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    const dl = document.getElementById('municipality-datalist');
+                    dl.innerHTML = (data.municipalities || []).map(m =>
+                        `<option value="${escapeHtml(m.municipality_name)}">${escapeHtml(m.municipality_name)} (${escapeHtml(m.municipality_code)})</option>`
+                    ).join('');
+                } catch (_) {}
+            }, 180);
         });
 
         document.getElementById('explore-form')?.addEventListener('submit', (ev) => {

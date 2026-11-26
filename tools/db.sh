@@ -58,7 +58,10 @@ case "$cmd" in
         podman ps -a --filter "name=${DB_CONTAINER}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
         ;;
     migrate)
-        podman exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_ADMIN_USER" -d "$DB_NAME" < db/migrations/001_initial_schema.sql
+        for f in db/migrations/*.sql; do
+            echo "Aplicando $f..."
+            podman exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_ADMIN_USER" -d "$DB_NAME" < "$f"
+        done
         podman exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_ADMIN_USER" -d "$DB_NAME" <<SQL
 DO \$\$
 BEGIN

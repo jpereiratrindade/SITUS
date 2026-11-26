@@ -37,6 +37,9 @@ public:
     resolve_reference(const nlohmann::json& req, const domain::SecurityLimits& limits) const;
 
     [[nodiscard]] std::expected<nlohmann::json, std::string>
+    search_municipalities(const std::string& query) const;
+
+    [[nodiscard]] std::expected<nlohmann::json, std::string>
     intersect_territories(const nlohmann::json& req, const domain::SecurityLimits& limits) const;
 
     [[nodiscard]] std::expected<nlohmann::json, std::string>

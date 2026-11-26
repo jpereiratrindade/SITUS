@@ -147,6 +147,30 @@ bhttp::response<bhttp::string_body> handle_request(
         return make_json_response(bhttp::status::ok, *res, ver, ka);
     }
 
+    if (req.method() == bhttp::verb::get && target == "/api/v1/municipalities") {
+        std::string q;
+        std::string full_target(req.target());
+        if (auto pos = full_target.find("q="); pos != std::string::npos) {
+            std::string raw_q = full_target.substr(pos + 2);
+            if (auto amp = raw_q.find('&'); amp != std::string::npos) raw_q.resize(amp);
+            for (std::size_t i = 0; i < raw_q.size(); ++i) {
+                if (raw_q[i] == '+') q.push_back(' ');
+                else if (raw_q[i] == '%' && i + 2 < raw_q.size()) {
+                    unsigned int hex = 0;
+                    if (sscanf(raw_q.substr(i + 1, 2).c_str(), "%x", &hex) == 1) {
+                        q.push_back(static_cast<char>(hex));
+                        i += 2;
+                    }
+                } else {
+                    q.push_back(raw_q[i]);
+                }
+            }
+        }
+        auto res = service.search_municipalities(q);
+        if (!res) return make_error_response(bhttp::status::service_unavailable, "MUNICIPALITY_SEARCH_FAILED", res.error(), ver, ka);
+        return make_json_response(bhttp::status::ok, *res, ver, ka);
+    }
+
     if (req.method() == bhttp::verb::get && target == "/api/v1/execution/capabilities") {
         return make_json_response(bhttp::status::ok, service.execution_capabilities(), ver, ka);
     }

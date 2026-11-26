@@ -58,6 +58,13 @@ window.SitusMap = (() => {
         }).join(' ') + 'Z';
     }
 
+    function lineToPath(coords, w, h) {
+        return coords.map((pt, idx) => {
+            const [x, y] = project(pt[0], pt[1], w, h);
+            return (idx === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+        }).join(' ');
+    }
+
     function geomToPath(geom, w, h) {
         if (!geom || !geom.coordinates) return '';
         if (geom.type === 'Polygon') {
@@ -65,6 +72,12 @@ window.SitusMap = (() => {
         }
         if (geom.type === 'MultiPolygon') {
             return geom.coordinates.map(poly => poly.map(r => ringToPath(r, w, h)).join(' ')).join(' ');
+        }
+        if (geom.type === 'LineString') {
+            return lineToPath(geom.coordinates, w, h);
+        }
+        if (geom.type === 'MultiLineString') {
+            return geom.coordinates.map(l => lineToPath(l, w, h)).join(' ');
         }
         return '';
     }
@@ -127,8 +140,14 @@ window.SitusMap = (() => {
         }
 
         if (highlightGeom) {
-            const hd = geomToPath(highlightGeom, w, h);
-            html += `<path d="${hd}" fill="none" stroke="#e2ad4a" stroke-width="2.5" stroke-dasharray="6 3"/>`;
+            if (highlightGeom.type === 'Point') {
+                const [px, py] = project(highlightGeom.coordinates[0], highlightGeom.coordinates[1], w, h);
+                html += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="6" fill="#e2ad4a" stroke="#071e38" stroke-width="2"/>`;
+            } else {
+                const hd = geomToPath(highlightGeom, w, h);
+                const isLine = highlightGeom.type === 'LineString' || highlightGeom.type === 'MultiLineString';
+                html += `<path d="${hd}" fill="none" stroke="#e2ad4a" stroke-width="${isLine ? '4' : '2.5'}" ${isLine ? '' : 'stroke-dasharray="6 3"'}/>`;
+            }
         }
 
         el.innerHTML = html;

@@ -29,6 +29,7 @@ public:
 
     [[nodiscard]] nlohmann::json health() const;
     [[nodiscard]] std::expected<nlohmann::json, std::string> catalog() const;
+    [[nodiscard]] std::expected<nlohmann::json, std::string> search_municipalities(const std::string& query) const;
     [[nodiscard]] std::expected<nlohmann::json, std::string> resolve_reference(const nlohmann::json& req) const;
     [[nodiscard]] std::expected<nlohmann::json, std::string> intersect_territories(const nlohmann::json& req) const;
     [[nodiscard]] std::expected<nlohmann::json, std::string> characterize_territories(const nlohmann::json& req) const;

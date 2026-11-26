@@ -98,11 +98,29 @@ std::expected<GeomQuery, std::string> build_reference_geom_query(
 
     if (kind == "MUNICIPALITY") {
         if (!req["value"].is_string()) {
-            return std::unexpected("value para MUNICIPALITY deve ser string (codigo IBGE 7 digitos)");
+            return std::unexpected("value para MUNICIPALITY deve ser string (codigo IBGE 7 digitos ou nome do municipio)");
         }
-        const std::string code = req["value"].get<std::string>();
-        if (auto v = policy::validate_municipality_code(code); !v) {
-            return std::unexpected(v.error());
+        const std::string raw = req["value"].get<std::string>();
+        if (raw.empty()) {
+            return std::unexpected("Informe o codigo IBGE ou nome do municipio");
+        }
+        std::string code = raw;
+        if (!policy::validate_municipality_code(raw)) {
+            auto mres = exec_params(
+                conn,
+                "SELECT DISTINCT municipality_code FROM territorial_unit tu "
+                "JOIN dataset_version dv ON dv.version_id = tu.version_id "
+                "WHERE dv.is_active = TRUE AND LOWER(tu.municipality_name) = LOWER($1) "
+                "LIMIT 2",
+                {raw}
+            );
+            if (!mres || PQntuples(mres->get()) == 0) {
+                return std::unexpected("Municipio nao encontrado na malha oficial do RS (informe o nome exato ou codigo IBGE de 7 digitos)");
+            }
+            if (PQntuples(mres->get()) > 1) {
+                return std::unexpected("Nome de municipio ambiguo; informe o codigo IBGE de 7 digitos");
+            }
+            code = PQgetvalue(mres->get(), 0, 0);
         }
         return GeomQuery{
             "(SELECT ST_Union(geom) FROM territorial_unit tu JOIN dataset_version dv ON dv.version_id = tu.version_id WHERE dv.is_active = TRUE AND tu.municipality_code = $1)",
@@ -272,51 +290,118 @@ PostgisStore::resolve_reference(const nlohmann::json& req, const domain::Securit
 
         auto res = exec_params(
             conn->get(),
-            "SELECT pr.cep_code, pr.resolution_level, pr.unit_code, pr.municipality_code, pr.support_note, "
-            "dv.dataset_version, s.source_id "
+            "SELECT pr.cep_code, pr.resolution_level, pr.reference_kind, pr.reference_name, "
+            "pr.municipality_code, pr.municipality_name, pr.source_id, pr.license, "
+            "pr.association_method, pr.limitations, pr.uncertainty, dv.dataset_version, "
+            "COALESCE(ST_AsGeoJSON(pr.support_geom), 'null') "
             "FROM postal_reference pr "
             "JOIN dataset_version dv ON dv.version_id = pr.version_id "
             "JOIN source s ON s.source_id = dv.source_id "
-            "WHERE dv.is_active = TRUE AND s.approval_status = 'APPROVED' AND pr.cep_code = $1",
+            "WHERE dv.is_active = TRUE AND s.approval_status = 'APPROVED' AND pr.cep_code = $1 "
+            "ORDER BY CASE pr.resolution_level "
+            "  WHEN 'R5' THEN 1 WHEN 'R4' THEN 2 WHEN 'R3' THEN 3 WHEN 'R2' THEN 4 WHEN 'POSTAL_REGION' THEN 5 WHEN 'R1' THEN 6 ELSE 9 END, "
+            "pr.source_id ASC",
             {cep_digits}
         );
         if (!res) return std::unexpected(res.error());
 
-        if (PQntuples(res->get()) == 0) {
+        const int nrows = PQntuples(res->get());
+        if (nrows == 0) {
             return nlohmann::json{
                 {"status", "UNAVAILABLE"},
                 {"kind", "CEP"},
-                {"spatial_level", "UNAVAILABLE"},
+                {"resolution_level", "R0"},
+                {"spatial_level", "R0 (UNAVAILABLE)"},
                 {"method", "local_approved_postal_reference_lookup"},
                 {"support_geometry", nullptr},
                 {"analysis_geometry", nullptr},
                 {"provenance", {
-                    {"source_id", "cep_referencia_territorial"},
                     {"policy", "CATEGORY_A_ONLY"}
                 }},
                 {"reasons", nlohmann::json::array({
-                    "Nenhuma fonte CEP Categoria A aprovada e licenciada encontrada para este codigo.",
-                    "O SITUS nao envia CEP a servicos externos e nao converte prefixo postal em coordenada ficticia."
+                    "CEP nao encontrado nas fontes publicas aprovadas (GeoNames / OSM Categoria A).",
+                    "O SITUS nao envia CEP a servicos externos e nao infere localizacao pela numeracao."
                 })}
             };
         }
 
         nlohmann::json matches = nlohmann::json::array();
-        for (int i = 0; i < PQntuples(res->get()); ++i) {
+        std::set<std::string> distinct_muns;
+        std::set<std::string> distinct_sources;
+        for (int i = 0; i < nrows; ++i) {
+            const std::string cd_mun = PQgetvalue(res->get(), i, 4);
+            const std::string src_id = PQgetvalue(res->get(), i, 6);
+            distinct_muns.insert(cd_mun);
+            distinct_sources.insert(src_id);
+
+            const std::string sg_str = PQgetvalue(res->get(), i, 12);
             matches.push_back({
                 {"resolution_level", PQgetvalue(res->get(), i, 1)},
-                {"unit_code", PQgetvalue(res->get(), i, 2)},
-                {"municipality_code", PQgetvalue(res->get(), i, 3)},
-                {"support_note", PQgetvalue(res->get(), i, 4)},
-                {"dataset_version", PQgetvalue(res->get(), i, 5)},
-                {"source_id", PQgetvalue(res->get(), i, 6)}
+                {"reference_kind", PQgetvalue(res->get(), i, 2)},
+                {"reference_name", PQgetvalue(res->get(), i, 3)},
+                {"municipality_code", cd_mun},
+                {"municipality_name", PQgetvalue(res->get(), i, 5)},
+                {"source_id", src_id},
+                {"license", PQgetvalue(res->get(), i, 7)},
+                {"association_method", PQgetvalue(res->get(), i, 8)},
+                {"limitations", PQgetvalue(res->get(), i, 9)},
+                {"uncertainty", PQgetvalue(res->get(), i, 10)},
+                {"dataset_version", PQgetvalue(res->get(), i, 11)},
+                {"support_geometry", (sg_str.empty() || sg_str == "null") ? nlohmann::json(nullptr) : nlohmann::json::parse(sg_str)}
             });
         }
+
+        const bool is_ambiguous = distinct_muns.size() > 1;
+        const auto& top = matches[0];
+        const std::string top_level = top["resolution_level"].get<std::string>();
+        const std::string top_mun = top["municipality_code"].get<std::string>();
+
+        nlohmann::json support_geom = top["support_geometry"];
+        nlohmann::json analysis_geom = nullptr;
+
+        // Quando nao e ambiguo e tem municipio unico, disponibiliza contexto poligonal do municipio
+        if (!is_ambiguous && !top_mun.empty()) {
+            auto mgeom = exec_params(
+                conn->get(),
+                "SELECT ST_AsGeoJSON(ST_SimplifyPreserveTopology(ST_Union(geom), 0.0005)) "
+                "FROM territorial_unit tu "
+                "JOIN dataset_version dv ON dv.version_id = tu.version_id "
+                "WHERE dv.is_active = TRUE AND tu.municipality_code = $1",
+                {top_mun}
+            );
+            if (mgeom && PQntuples(mgeom->get()) > 0) {
+                const std::string mg = PQgetvalue(mgeom->get(), 0, 0);
+                if (!mg.empty() && mg != "null") {
+                    analysis_geom = nlohmann::json::parse(mg);
+                    if (top_level == "R1") {
+                        support_geom = analysis_geom;
+                    }
+                }
+            }
+        }
+
+        std::vector<std::string> reasons;
+        if (is_ambiguous) {
+            reasons.push_back("CEP associado a multiplos municipios nas fontes aprovadas; nenhuma referencia foi priorizada automaticamente.");
+        } else if (top_level == "R1") {
+            reasons.push_back("CEP resolvido apenas em nivel municipal (R1). Nao representa localizacao submunicipal.");
+        } else {
+            reasons.push_back("CEP resolvido em suporte territorial publico (" + top_level + ") com contexto municipal.");
+        }
+
         return nlohmann::json{
-            {"status", PQntuples(res->get()) > 1 ? "AMBIGUOUS" : "RESOLVED"},
+            {"status", is_ambiguous ? "AMBIGUOUS" : "RESOLVED"},
             {"kind", "CEP"},
+            {"cep_code", cep_digits},
+            {"resolution_level", is_ambiguous ? "AMBIGUOUS" : top_level},
+            {"spatial_level", is_ambiguous ? "AMBIGUOUS" : (top_level + " (" + top["reference_kind"].get<std::string>() + ")")},
+            {"municipality_code", is_ambiguous ? nlohmann::json(nullptr) : nlohmann::json(top_mun)},
+            {"municipality_name", is_ambiguous ? nlohmann::json(nullptr) : top["municipality_name"]},
+            {"method", top["association_method"]},
+            {"support_geometry", is_ambiguous ? nlohmann::json(nullptr) : support_geom},
+            {"analysis_geometry", analysis_geom},
             {"matches", matches},
-            {"reasons", nlohmann::json::array({"Resolvido via tabela local aprovada de referencia postal"})}
+            {"reasons", reasons}
         };
     }
 
@@ -406,6 +491,34 @@ PostgisStore::resolve_reference(const nlohmann::json& req, const domain::Securit
         {"analysis_geometry", nlohmann::json::parse(PQgetvalue(res->get(), 0, 3))},
         {"reasons", nlohmann::json::array({gq->support_note})}
     };
+}
+
+std::expected<nlohmann::json, std::string>
+PostgisStore::search_municipalities(const std::string& query) const {
+    auto conn = connect_pg(conninfo_);
+    if (!conn) return std::unexpected(conn.error());
+
+    auto res = exec_params(
+        conn->get(),
+        "SELECT DISTINCT tu.municipality_code, tu.municipality_name "
+        "FROM territorial_unit tu "
+        "JOIN dataset_version dv ON dv.version_id = tu.version_id "
+        "WHERE dv.is_active = TRUE AND tu.municipality_code <> '' "
+        "AND ($1 = '' OR tu.municipality_name ILIKE '%' || $1 || '%' OR tu.municipality_code LIKE $1 || '%') "
+        "ORDER BY tu.municipality_name ASC "
+        "LIMIT 25",
+        {query}
+    );
+    if (!res) return std::unexpected(res.error());
+
+    nlohmann::json arr = nlohmann::json::array();
+    for (int i = 0; i < PQntuples(res->get()); ++i) {
+        arr.push_back({
+            {"municipality_code", PQgetvalue(res->get(), i, 0)},
+            {"municipality_name", PQgetvalue(res->get(), i, 1)}
+        });
+    }
+    return nlohmann::json{{"municipalities", arr}};
 }
 
 std::expected<nlohmann::json, std::string>

@@ -1,0 +1,23 @@
+{
+  "attributes": {
+    "type": true,
+    "id": true,
+    "version": false,
+    "changeset": false,
+    "timestamp": false,
+    "uid": false,
+    "user": false
+  },
+  "linear_tags": ["highway", "boundary"],
+  "area_tags": ["boundary", "place"],
+  "include_tags": [
+    "postal_code",
+    "highway",
+    "name",
+    "boundary",
+    "admin_level",
+    "place",
+    "access",
+    "service"
+  ]
+}

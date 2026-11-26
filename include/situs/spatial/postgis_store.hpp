@@ -43,6 +43,9 @@ public:
     intersect_territories(const nlohmann::json& req, const domain::SecurityLimits& limits) const;
 
     [[nodiscard]] std::expected<nlohmann::json, std::string>
+    characterize_environmental_vectors(const nlohmann::json& req, const domain::SecurityLimits& limits) const;
+
+    [[nodiscard]] std::expected<nlohmann::json, std::string>
     get_map_features(const nlohmann::json& req, const domain::SecurityLimits& limits) const;
 
     [[nodiscard]] std::expected<nlohmann::json, std::string>

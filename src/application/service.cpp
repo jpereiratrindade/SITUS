@@ -103,8 +103,28 @@ std::expected<nlohmann::json, std::string> SitusService::characterize_territorie
     }
 
     const double ref_area_m2 = inter->value("reference_area_m2", 0.0);
+
+    // Dimensões ambientais vetoriais (Biomas, Hidrografia, Pedologia)
+    auto env_vecs = store_.characterize_environmental_vectors(req, cfg_.limits);
+    if (env_vecs && env_vecs->is_array()) {
+        for (auto& item : *env_vecs) {
+            observations.push_back(std::move(item));
+        }
+    }
+
+    // Uso e cobertura da terra (MapBiomas 30m)
     auto raster_obs = spatial::characterize_raster_over_geometry(cfg_.raster, effective_geom, ref_area_m2);
+    raster_obs["dimension"] = "Uso e cobertura da terra";
     observations.push_back(std::move(raster_obs));
+
+    // Relevo: Altitude e Declividade (TOPODATA ~30m)
+    auto elev_obs = spatial::characterize_continuous_raster_over_geometry(cfg_.elevation_raster, effective_geom, "elevation_m", "m");
+    elev_obs["dimension"] = "Relevo";
+    observations.push_back(std::move(elev_obs));
+
+    auto slope_obs = spatial::characterize_continuous_raster_over_geometry(cfg_.slope_raster, effective_geom, "slope_pct", "percent");
+    slope_obs["dimension"] = "Relevo";
+    observations.push_back(std::move(slope_obs));
 
     return nlohmann::json{
         {"status", (*inter)["status"]},

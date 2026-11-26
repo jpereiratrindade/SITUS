@@ -189,6 +189,51 @@ std::expected<GeomQuery, std::string> build_reference_geom_query(
         };
     }
 
+    if (kind == "CEP") {
+        if (!req["value"].is_string()) {
+            return std::unexpected("value para CEP deve ser string");
+        }
+        const std::string cep_raw = req["value"].get<std::string>();
+        if (auto v = policy::validate_cep_syntax(cep_raw); !v) {
+            return std::unexpected(v.error());
+        }
+        std::string cep_digits;
+        for (char c : cep_raw) {
+            if (std::isdigit(static_cast<unsigned char>(c))) cep_digits.push_back(c);
+        }
+        const double radius_m = req.value("radius_m", 500.0);
+        if (radius_m <= 0.0 || radius_m > limits.max_radius_m) {
+            return std::unexpected("radius_m para entorno de CEP deve estar entre 1 e " + std::to_string(limits.max_radius_m) + " m");
+        }
+
+        auto chk = exec_params(
+            conn,
+            "SELECT pr.resolution_level, pr.municipality_code, COUNT(*) OVER() "
+            "FROM postal_reference pr "
+            "JOIN dataset_version dv ON dv.version_id = pr.version_id "
+            "JOIN source s ON s.source_id = dv.source_id "
+            "WHERE dv.is_active = TRUE AND s.approval_status = 'APPROVED' AND pr.cep_code = $1 "
+            "ORDER BY CASE pr.resolution_level "
+            "  WHEN 'R5' THEN 1 WHEN 'R4' THEN 2 WHEN 'R3' THEN 3 WHEN 'R2' THEN 4 WHEN 'POSTAL_REGION' THEN 5 WHEN 'R1' THEN 6 ELSE 9 END "
+            "LIMIT 1",
+            {cep_digits}
+        );
+        if (!chk || PQntuples(chk->get()) == 0) {
+            return std::unexpected("CEP nao disponivel para caracterizacao de entorno");
+        }
+        const std::string lvl = PQgetvalue(chk->get(), 0, 0);
+        if (lvl == "R1") {
+            return std::unexpected("CEP possui apenas resolucao municipal (R1); selecione o municipio ou desenhe uma area no mapa");
+        }
+        return GeomQuery{
+            "(SELECT ST_Buffer(ST_Union(pr.support_geom)::geography, $2::double precision)::geometry "
+            "FROM postal_reference pr JOIN dataset_version dv ON dv.version_id = pr.version_id "
+            "WHERE dv.is_active = TRUE AND pr.cep_code = $1 AND pr.resolution_level IN ('R2','R3','R4','R5','POSTAL_REGION') AND pr.support_geom IS NOT NULL)",
+            {cep_digits, std::to_string(radius_m)},
+            "Entorno geodesico de " + std::to_string(static_cast<int>(radius_m)) + " m ao redor do suporte territorial publico do CEP"
+        };
+    }
+
     return std::unexpected("kind nao suportado para operacao espacial: " + kind);
 }
 
@@ -359,8 +404,25 @@ PostgisStore::resolve_reference(const nlohmann::json& req, const domain::Securit
         nlohmann::json support_geom = top["support_geometry"];
         nlohmann::json analysis_geom = nullptr;
 
-        // Quando nao e ambiguo e tem municipio unico, disponibiliza contexto poligonal do municipio
-        if (!is_ambiguous && !top_mun.empty()) {
+        // Quando nao e ambiguo e tem municipio unico:
+        // Se radius_m > 0 e suporte submunicipal (R2..R5/POSTAL_REGION), gera entorno como analysis_geometry;
+        // caso contrario, disponibiliza o poligono do municipio como contexto.
+        const double req_radius_m = req.value("radius_m", 0.0);
+        if (!is_ambiguous && req_radius_m > 0.0 && top_level != "R1") {
+            auto bgeom = exec_params(
+                conn->get(),
+                "SELECT ST_AsGeoJSON(ST_Buffer(ST_Union(pr.support_geom)::geography, $2::double precision)::geometry) "
+                "FROM postal_reference pr JOIN dataset_version dv ON dv.version_id = pr.version_id "
+                "WHERE dv.is_active = TRUE AND pr.cep_code = $1 AND pr.resolution_level IN ('R2','R3','R4','R5','POSTAL_REGION') AND pr.support_geom IS NOT NULL",
+                {cep_digits, std::to_string(req_radius_m)}
+            );
+            if (bgeom && PQntuples(bgeom->get()) > 0) {
+                const std::string bg = PQgetvalue(bgeom->get(), 0, 0);
+                if (!bg.empty() && bg != "null") {
+                    analysis_geom = nlohmann::json::parse(bg);
+                }
+            }
+        } else if (!is_ambiguous && !top_mun.empty()) {
             auto mgeom = exec_params(
                 conn->get(),
                 "SELECT ST_AsGeoJSON(ST_SimplifyPreserveTopology(ST_Union(geom), 0.0005)) "
@@ -595,6 +657,197 @@ PostgisStore::intersect_territories(const nlohmann::json& req, const domain::Sec
         {"dataset_versions", dv_arr},
         {"units", units}
     };
+}
+
+std::expected<nlohmann::json, std::string>
+PostgisStore::characterize_environmental_vectors(const nlohmann::json& req, const domain::SecurityLimits& limits) const {
+    auto conn = connect_pg(conninfo_);
+    if (!conn) return std::unexpected(conn.error());
+
+    auto gq = build_reference_geom_query(conn->get(), req, limits);
+    if (!gq) return std::unexpected(gq.error());
+
+    nlohmann::json obs = nlohmann::json::array();
+
+    // 1. Biomas (IBGE 1:250.000)
+    {
+        const std::string sql =
+            "WITH ref AS (SELECT " + gq->geom_expr + " AS g) "
+            "SELECT b.biome_code, b.biome_name, "
+            "SUM(ST_Area(ST_Intersection(b.geom, ref.g)::geography)) AS area_m2, "
+            "ST_Area(ref.g::geography) AS ref_area_m2, "
+            "dv.dataset_version "
+            "FROM ref "
+            "JOIN biome_unit b ON ST_Intersects(b.geom, ref.g) "
+            "JOIN dataset_version dv ON dv.version_id = b.version_id "
+            "WHERE dv.is_active = TRUE AND ref.g IS NOT NULL "
+            "GROUP BY b.biome_code, b.biome_name, ref.g, dv.dataset_version "
+            "ORDER BY area_m2 DESC";
+        auto res = exec_params(conn->get(), sql.c_str(), gq->params);
+        if (res && PQntuples(res->get()) > 0) {
+            nlohmann::json items = nlohmann::json::array();
+            double sum_area = 0.0, ref_area = 0.0;
+            std::string dv;
+            for (int i = 0; i < PQntuples(res->get()); ++i) {
+                const double a = std::strtod(PQgetvalue(res->get(), i, 2), nullptr);
+                ref_area = std::strtod(PQgetvalue(res->get(), i, 3), nullptr);
+                dv = PQgetvalue(res->get(), i, 4);
+                sum_area += a;
+                items.push_back({
+                    {"biome_code", PQgetvalue(res->get(), i, 0)},
+                    {"biome_name", PQgetvalue(res->get(), i, 1)},
+                    {"area_ha", a / 10000.0},
+                    {"fraction", ref_area > 0.0 ? a / ref_area : 0.0}
+                });
+            }
+            obs.push_back({
+                {"indicator_id", "biome_composition"},
+                {"dimension", "Geografia territorial"},
+                {"value", {{"biomes", items}, {"reference_area_ha", ref_area / 10000.0}}},
+                {"unit", "ha_and_fraction"},
+                {"status", "AVAILABLE"},
+                {"source_id", "ibge_biomas_250k"},
+                {"dataset_version", dv},
+                {"reference_date", "2019-01-01"},
+                {"native_resolution", "1:250.000"},
+                {"method", "postgis_st_intersection_geography_wgs84"},
+                {"support", "poligono_efetivo_investigacao"},
+                {"coverage_fraction", ref_area > 0.0 ? std::min(1.0, sum_area / ref_area) : 0.0},
+                {"limitations", "Escala regional 1:250.000; transicoes locais exigem verificacao em campo."}
+            });
+        } else {
+            obs.push_back({
+                {"indicator_id", "biome_composition"},
+                {"dimension", "Geografia territorial"},
+                {"value", nullptr},
+                {"unit", "ha_and_fraction"},
+                {"status", "NO_DATA"},
+                {"source_id", "ibge_biomas_250k"},
+                {"dataset_version", "2019"},
+                {"native_resolution", "1:250.000"},
+                {"method", "postgis_st_intersection_geography_wgs84"},
+                {"support", "poligono_efetivo_investigacao"},
+                {"coverage_fraction", 0.0},
+                {"limitations", "Nenhum bioma carregado ou area fora da cobertura."}
+            });
+        }
+    }
+
+    // 2. Hidrografia (IBGE BC250)
+    {
+        const std::string sql =
+            "WITH ref AS (SELECT " + gq->geom_expr + " AS g) "
+            "SELECT h.feature_kind, "
+            "COUNT(*) AS cnt, "
+            "COALESCE(SUM(CASE WHEN h.feature_kind = 'WATERCOURSE' THEN ST_Length(ST_Intersection(h.geom, ref.g)::geography) / 1000.0 ELSE 0 END), 0.0) AS len_km, "
+            "COALESCE(SUM(CASE WHEN h.feature_kind = 'WATER_BODY' THEN ST_Area(ST_Intersection(h.geom, ref.g)::geography) / 10000.0 ELSE 0 END), 0.0) AS body_ha, "
+            "STRING_AGG(DISTINCT NULLIF(h.feature_name, ''), ', ') AS names, "
+            "MAX(dv.dataset_version) AS dv "
+            "FROM ref "
+            "JOIN hydro_feature h ON ST_Intersects(h.geom, ref.g) "
+            "JOIN dataset_version dv ON dv.version_id = h.version_id "
+            "WHERE dv.is_active = TRUE AND ref.g IS NOT NULL "
+            "GROUP BY h.feature_kind";
+        auto res = exec_params(conn->get(), sql.c_str(), gq->params);
+        if (res) {
+            std::size_t wc_cnt = 0, wb_cnt = 0;
+            double len_km = 0.0, body_ha = 0.0;
+            std::string names;
+            std::string dv = "2026-03-03";
+            for (int i = 0; i < PQntuples(res->get()); ++i) {
+                const std::string fk = PQgetvalue(res->get(), i, 0);
+                const std::size_t cnt = static_cast<std::size_t>(std::strtoll(PQgetvalue(res->get(), i, 1), nullptr, 10));
+                if (fk == "WATERCOURSE") {
+                    wc_cnt = cnt;
+                    len_km = std::strtod(PQgetvalue(res->get(), i, 2), nullptr);
+                } else if (fk == "WATER_BODY") {
+                    wb_cnt = cnt;
+                    body_ha = std::strtod(PQgetvalue(res->get(), i, 3), nullptr);
+                }
+                const std::string nm = PQgetvalue(res->get(), i, 4);
+                if (!nm.empty()) {
+                    if (!names.empty()) names += ", ";
+                    names += nm;
+                }
+                const std::string d = PQgetvalue(res->get(), i, 5);
+                if (!d.empty()) dv = d;
+            }
+            obs.push_back({
+                {"indicator_id", "hydrography_summary"},
+                {"dimension", "Hidrografia"},
+                {"value", {
+                    {"watercourse_segments", wc_cnt},
+                    {"watercourse_length_km", len_km},
+                    {"water_bodies", wb_cnt},
+                    {"water_body_area_ha", body_ha},
+                    {"named_features", names}
+                }},
+                {"unit", "km_and_ha"},
+                {"status", "AVAILABLE"},
+                {"source_id", "ibge_bc250_hidrografia"},
+                {"dataset_version", dv},
+                {"reference_date", "2026-03-03"},
+                {"native_resolution", "1:250.000"},
+                {"method", "postgis_st_intersection_length_and_area_geography"},
+                {"support", "poligono_efetivo_investigacao"},
+                {"coverage_fraction", 1.0},
+                {"limitations", "Escala cartografica 1:250.000; nascentes e arroios de pequena ordem podem nao constar."}
+            });
+        }
+    }
+
+    // 3. Pedologia (IBGE BDiA 1:250.000)
+    {
+        const std::string sql =
+            "WITH ref AS (SELECT " + gq->geom_expr + " AS g) "
+            "SELECT s.soil_symbol, s.soil_class, s.soil_order, "
+            "SUM(ST_Area(ST_Intersection(s.geom, ref.g)::geography)) AS area_m2, "
+            "ST_Area(ref.g::geography) AS ref_area_m2, "
+            "MAX(dv.dataset_version) AS dv "
+            "FROM ref "
+            "JOIN soil_unit s ON ST_Intersects(s.geom, ref.g) "
+            "JOIN dataset_version dv ON dv.version_id = s.version_id "
+            "WHERE dv.is_active = TRUE AND ref.g IS NOT NULL "
+            "GROUP BY s.soil_symbol, s.soil_class, s.soil_order, ref.g "
+            "ORDER BY area_m2 DESC "
+            "LIMIT 10";
+        auto res = exec_params(conn->get(), sql.c_str(), gq->params);
+        if (res && PQntuples(res->get()) > 0) {
+            nlohmann::json soils = nlohmann::json::array();
+            double sum_area = 0.0, ref_area = 0.0;
+            std::string dv;
+            for (int i = 0; i < PQntuples(res->get()); ++i) {
+                const double a = std::strtod(PQgetvalue(res->get(), i, 3), nullptr);
+                ref_area = std::strtod(PQgetvalue(res->get(), i, 4), nullptr);
+                dv = PQgetvalue(res->get(), i, 5);
+                sum_area += a;
+                soils.push_back({
+                    {"soil_symbol", PQgetvalue(res->get(), i, 0)},
+                    {"soil_class", PQgetvalue(res->get(), i, 1)},
+                    {"soil_order", PQgetvalue(res->get(), i, 2)},
+                    {"area_ha", a / 10000.0},
+                    {"fraction", ref_area > 0.0 ? a / ref_area : 0.0}
+                });
+            }
+            obs.push_back({
+                {"indicator_id", "soil_composition"},
+                {"dimension", "Solos"},
+                {"value", {{"soils", soils}}},
+                {"unit", "ha_and_fraction"},
+                {"status", "AVAILABLE"},
+                {"source_id", "ibge_bdia_pedologia_250k"},
+                {"dataset_version", dv},
+                {"reference_date", "2023-08-04"},
+                {"native_resolution", "1:250.000"},
+                {"method", "postgis_st_intersection_geography_wgs84"},
+                {"support", "poligono_efetivo_investigacao"},
+                {"coverage_fraction", ref_area > 0.0 ? std::min(1.0, sum_area / ref_area) : 0.0},
+                {"limitations", "Escala exploratoria 1:250.000; nao substitui levantamento pedologico local."}
+            });
+        }
+    }
+
+    return obs;
 }
 
 std::expected<nlohmann::json, std::string>

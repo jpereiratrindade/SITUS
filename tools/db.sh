@@ -59,6 +59,12 @@ case "$cmd" in
         ;;
     migrate)
         for f in db/migrations/*.sql; do
+            ver="$(basename "$f" | cut -d_ -f1)"
+            applied="$(podman exec "$DB_CONTAINER" psql -At -U "$DB_ADMIN_USER" -d "$DB_NAME" -c "SELECT 1 FROM schema_migration WHERE version = '${ver}'" 2>/dev/null || true)"
+            if [ "$applied" = "1" ]; then
+                echo "Pulando $f (versao ${ver} ja aplicada)"
+                continue
+            fi
             echo "Aplicando $f..."
             podman exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_ADMIN_USER" -d "$DB_NAME" < "$f"
         done

@@ -21,6 +21,8 @@ struct AppConfig {
     std::string wasm_artifact_path = "web/wasm/situs_core.wasm";
     domain::SecurityLimits limits;
     spatial::RasterConfig raster;
+    spatial::RasterConfig elevation_raster;
+    spatial::RasterConfig slope_raster;
 };
 
 class SitusService {

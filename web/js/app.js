@@ -214,7 +214,7 @@
                 return;
             }
 
-            if (refData.kind === 'CEP' && refData.status === 'RESOLVED') {
+            if (refData.kind === 'CEP' && refData.status === 'RESOLVED' && !reference.investigate_surroundings) {
                 const munCode = refData.municipality_code;
                 const mapRes = await fetch('/api/v1/map/features', {
                     method: 'POST',
@@ -233,16 +233,36 @@
                     </article>
                 `).join('');
 
+                const isSubmun = refData.resolution_level && refData.resolution_level !== 'R1';
+                const surroundHtml = isSubmun ? `
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0;padding:10px;background:#eef6fb;border-radius:8px;">
+                        <label style="font-size:12px;font-weight:700;">Entorno (m):
+                            <select id="cep-radius-select" style="padding:5px 8px;border-radius:6px;border:1px solid #cbdce8;">
+                                <option value="250">250 m</option>
+                                <option value="500" selected>500 m</option>
+                                <option value="1000">1.000 m</option>
+                                <option value="2000">2.000 m</option>
+                            </select>
+                        </label>
+                        <button type="button" class="button primary" id="cep-investigate-surroundings">Caracterizar entorno do CEP</button>
+                    </div>
+                ` : '';
+
                 inspector.innerHTML = `
                     <span class="badge">${escapeHtml(refData.resolution_level)} · RESOLVED</span>
                     <h3>CEP ${escapeHtml(refData.cep_code)} → ${escapeHtml(refData.municipality_name)}</h3>
                     <p>${(refData.reasons || []).map(escapeHtml).join(' ')}</p>
+                    ${surroundHtml}
                     <div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;">
-                        <button type="button" class="button primary" id="cep-investigate-mun">Investigar setores de ${escapeHtml(refData.municipality_name)}</button>
+                        <button type="button" class="button ${isSubmun ? 'outline' : 'primary'}" id="cep-investigate-mun">Explorar município (${escapeHtml(refData.municipality_name)})</button>
                         <button type="button" class="button outline" id="cep-draw-area">▢ Selecionar área menor</button>
                     </div>
                     ${matchesHtml}
                 `;
+                document.getElementById('cep-investigate-surroundings')?.addEventListener('click', () => {
+                    const r = Number(document.getElementById('cep-radius-select').value || 500);
+                    runInvestigation({ kind: 'CEP', value: refData.cep_code, radius_m: r, crs: 'EPSG:4326', investigate_surroundings: true });
+                });
                 document.getElementById('cep-investigate-mun')?.addEventListener('click', () => {
                     runInvestigation({ kind: 'MUNICIPALITY', value: munCode, crs: 'EPSG:4326' });
                 });
@@ -342,25 +362,43 @@
             : '';
 
         const obsHtml = obsList.map(o => {
-            let extraHtml = '';
-            if (o.indicator_id === 'land_cover_composition' && o.status === 'AVAILABLE' && o.value && Array.isArray(o.value.classes)) {
-                extraHtml = `<table><thead><tr><th>Classe (MapBiomas 2023)</th><th>Pixels</th><th>Área</th><th>% pixels</th></tr></thead><tbody>` +
-                    o.value.classes.map(c => `
-                        <tr>
-                            <td>${escapeHtml(c.class_label)}</td>
-                            <td>${Number(c.pixel_count).toLocaleString('pt-BR')}</td>
-                            <td>${fmtAreaHa(c.area_m2)}</td>
-                            <td>${(c.pixel_fraction * 100).toFixed(1)}%</td>
-                        </tr>
-                    `).join('') +
-                    `</tbody></table><p class="muted" style="margin-top:6px;">Cobertura válida do raster: ${(o.coverage_fraction * 100).toFixed(1)}% (${Number(o.value.valid_pixels).toLocaleString('pt-BR')} pixels válidos, ${Number(o.value.nodata_pixels).toLocaleString('pt-BR')} NoData)</p>`;
+            let bodyHtml = '';
+            const v = o.value || {};
+            if (o.status === 'AVAILABLE') {
+                if (o.indicator_id === 'biome_composition' && Array.isArray(v.biomes)) {
+                    bodyHtml = v.biomes.map(b => `<p><strong>${escapeHtml(b.biome_name)}</strong>: ${b.area_ha.toFixed(1)} ha (${(b.fraction * 100).toFixed(1)}%)</p>`).join('');
+                } else if (o.indicator_id === 'land_cover_composition' && Array.isArray(v.classes)) {
+                    bodyHtml = `<table><thead><tr><th>Classe (MapBiomas)</th><th>Área</th><th>% pixels</th></tr></thead><tbody>` +
+                        v.classes.map(c => `<tr><td>${escapeHtml(c.class_label)}</td><td>${fmtAreaHa(c.area_m2)}</td><td>${(c.pixel_fraction * 100).toFixed(1)}%</td></tr>`).join('') +
+                        `</tbody></table>`;
+                } else if (o.indicator_id === 'elevation_m') {
+                    bodyHtml = `<p>Altitude média: <strong>${v.mean.toFixed(1)} m</strong> (mín ${v.min.toFixed(1)} m · máx ${v.max.toFixed(1)} m · DP ${v.stddev.toFixed(1)} m)</p>`;
+                } else if (o.indicator_id === 'slope_pct') {
+                    bodyHtml = `<p>Declividade média: <strong>${v.mean.toFixed(1)}%</strong> (mín ${v.min.toFixed(1)}% · máx ${v.max.toFixed(1)}%)</p>`;
+                } else if (o.indicator_id === 'hydrography_summary') {
+                    bodyHtml = `<p>Cursos d'água: <strong>${v.watercourse_segments}</strong> trechos (${v.watercourse_length_km.toFixed(2)} km) · Massas d'água: <strong>${v.water_bodies}</strong> (${v.water_body_area_ha.toFixed(1)} ha)${v.named_features ? `<br><small class="muted">Nomes: ${escapeHtml(v.named_features)}</small>` : ''}</p>`;
+                } else if (o.indicator_id === 'soil_composition' && Array.isArray(v.soils)) {
+                    bodyHtml = `<table><thead><tr><th>Solo (BDiA)</th><th>Área</th><th>%</th></tr></thead><tbody>` +
+                        v.soils.slice(0, 5).map(s => `<tr><td>${escapeHtml(s.soil_symbol)} · ${escapeHtml(s.soil_class)}</td><td>${s.area_ha.toFixed(1)} ha</td><td>${(s.fraction * 100).toFixed(1)}%</td></tr>`).join('') +
+                        `</tbody></table>`;
+                }
             }
+            const labelMap = {
+                biome_composition: 'Bioma',
+                land_cover_composition: 'Uso e cobertura da terra',
+                elevation_m: 'Relevo · Altitude',
+                slope_pct: 'Relevo · Declividade',
+                hydrography_summary: 'Hidrografia',
+                soil_composition: 'Solos'
+            };
             return `
-                <article class="obs-card ${o.status === 'NO_DATA' ? 'nodata' : ''}">
-                    <h4>${escapeHtml(o.indicator_id)} <span class="badge ${o.status === 'AVAILABLE' ? '' : 'warn'}">${escapeHtml(o.status)}</span></h4>
-                    <p class="muted">Fonte: ${escapeHtml(o.source_id)} · Resolução: ${escapeHtml(o.native_resolution)} · Método: ${escapeHtml(o.method)}</p>
-                    ${extraHtml}
-                    <p class="muted">${escapeHtml(o.limitations)}</p>
+                <article class="obs-card ${o.status === 'NO_DATA' || o.status === 'NOT_APPLICABLE' ? 'nodata' : ''}">
+                    <h4>${escapeHtml(labelMap[o.indicator_id] || o.indicator_id)} <span class="badge ${o.status === 'AVAILABLE' ? '' : 'warn'}">${escapeHtml(o.status)}</span></h4>
+                    ${bodyHtml}
+                    <details style="margin-top:6px;">
+                        <summary style="font-size:11px;color:var(--muted);cursor:pointer;">Proveniência, resolução e limitações</summary>
+                        <p class="muted" style="margin-top:4px;font-size:11.5px;">Fonte: ${escapeHtml(o.source_id)} (v${escapeHtml(o.dataset_version)}) · Ref.: ${escapeHtml(o.reference_date || '—')} · Resolução: ${escapeHtml(o.native_resolution)} · Cobertura: ${o.coverage_fraction != null ? (o.coverage_fraction * 100).toFixed(1) + '%' : '—'}<br>Método: ${escapeHtml(o.method)}<br>${escapeHtml(o.limitations)}</p>
+                    </details>
                 </article>
             `;
         }).join('');

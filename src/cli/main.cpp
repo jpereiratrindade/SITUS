@@ -65,12 +65,29 @@ situs::application::AppConfig load_config(bool admin_mode) {
     cfg.db_conninfo = "host=" + db_host + " port=" + db_port + " dbname=" + db_name +
                       " user=" + db_user + " password=" + db_pass;
 
-    cfg.raster.geotiff_path = env_or("SITUS_RASTER_PATH", "");
-    cfg.raster.approved = env_or("SITUS_RASTER_APPROVED", "0") == "1";
+    cfg.raster.geotiff_path = env_or("SITUS_RASTER_PATH", "/run/media/jpereiratrindade/labeco10T/dev/cpp/farina/ut_rs_mapbiomas_2023_campos_sq_32722.tif");
+    cfg.raster.approved = env_or("SITUS_RASTER_APPROVED", "1") == "1";
     cfg.raster.source_id = env_or("SITUS_RASTER_SOURCE_ID", "mapbiomas_campos_rs_2023");
     cfg.raster.dataset_version = env_or("SITUS_RASTER_VERSION", "2023.col9");
     cfg.raster.native_resolution = "30 m (EPSG:32722, 900 m2/pixel)";
     cfg.raster.reference_date = "2023-01-01";
+    cfg.raster.limitations = "Distingue Formacao Campestre (classe 12) vs demais coberturas (classe 0). Resolucao 30m; nao descreve imovel individual.";
+
+    cfg.elevation_raster.geotiff_path = env_or("SITUS_ELEVATION_RASTER_PATH", "var/data/patch004/topodata_alt_rs.vrt");
+    cfg.elevation_raster.approved = env_or("SITUS_TOPODATA_APPROVED", "1") == "1";
+    cfg.elevation_raster.source_id = "inpe_topodata_altitude";
+    cfg.elevation_raster.dataset_version = "2008.v1";
+    cfg.elevation_raster.native_resolution = "1 arco-segundo (~30 m, refinamento SRTM 90 m)";
+    cfg.elevation_raster.reference_date = "2000-02-01";
+    cfg.elevation_raster.limitations = "Refinamento geoestatistico do SRTM (~90 m); nao substitui levantamento topografico local.";
+
+    cfg.slope_raster.geotiff_path = env_or("SITUS_SLOPE_RASTER_PATH", "var/data/patch004/topodata_decliv_rs.vrt");
+    cfg.slope_raster.approved = env_or("SITUS_TOPODATA_APPROVED", "1") == "1";
+    cfg.slope_raster.source_id = "inpe_topodata_declividade";
+    cfg.slope_raster.dataset_version = "2008.v1";
+    cfg.slope_raster.native_resolution = "1 arco-segundo (~30 m, refinamento SRTM 90 m)";
+    cfg.slope_raster.reference_date = "2000-02-01";
+    cfg.slope_raster.limitations = "Declividade em percentual derivada do MDE TOPODATA; nao substitui levantamento topografico local.";
     return cfg;
 }
 
